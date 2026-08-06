@@ -23,40 +23,48 @@
 
 ### 1. Contour Generation (Marching Squares)
 Each grid cell formed by 4 neighboring DEM elevation values $[E_{00}, E_{01}, E_{10}, E_{11}]$ is classified against a target elevation threshold $C$. Each vertex produces a 1-bit binary flag:
-$$
+
+```math
 b_i = \begin{cases} 1 & \text{if } E_i \ge C \\ 0 & \text{if } E_i < C \end{cases}
-$$
+```
+
 The 4-bit index $k = \sum_{i=0}^3 b_i 2^i \in [0, 15]$ indexes a lookup table to place interpolated contour line segment endpoints along cell edges via linear interpolation:
-$$
+
+```math
 t = \frac{C - E_A}{E_B - E_A} \implies P = (1 - t)P_A + t P_B
-$$
+```
 
 ### 2. Polyline Enclosed Area (Shoelace Formula)
 For closed contour polylines with vertices $(x_1, y_1), (x_2, y_2), \dots, (x_n, y_n)$:
-$$
+
+```math
 \text{Area} = \frac{1}{2} \left| \sum_{i=1}^{n-1} (x_i y_{i+1} - x_{i+1} y_i) + (x_n y_1 - x_1 y_n) \right|
-$$
+```
 
 ### 3. Slope & Aspect Field
 Local elevation gradients $\frac{\partial E}{\partial x}$ and $\frac{\partial E}{\partial y}$ are computed using central finite differences:
-$$
+
+```math
 \text{Slope (radians)} = \arctan \sqrt{\left(\frac{\partial E}{\partial x}\right)^2 + \left(\frac{\partial E}{\partial y}\right)^2} \implies \text{Slope (°)} = \text{Slope (rad)} \times \frac{180}{\pi}
-$$
-$$
+```
+
+```math
 \text{Aspect (radians)} = \text{atan2}\left(-\frac{\partial E}{\partial x}, \frac{\partial E}{\partial y}\right)
-$$
+```
 
 ### 4. D8 Flow Direction Matrix
 Each cell flows to its neighbor in the $3 \times 3$ neighborhood that maximizes the downward slope:
-$$
+
+```math
 \text{Drop}_{i,j} = \frac{E_{\text{center}} - E_{i,j}}{\text{Distance}_{i,j}}
-$$
+```
 
 ### 5. Pond Storage Volume (Trapezoidal Layer Integration)
 Depression sinks filled via Priority-Flood (Wang & Liu 2006). For each cell in a labeled depression:
-$$
-V_{\text{total}} = \sum_{(r,c) \in \text{Pond}} \max(0, E_{\text{water\_level}} - E_{r,c}) \times A_{\text{pixel}}
-$$
+
+```math
+V_{\text{total}} = \sum_{(r,c) \in \text{Pond}} \max(0, E_{\text{water_level}} - E_{r,c}) \times A_{\text{pixel}}
+```
 
 ---
 
