@@ -1,0 +1,10 @@
+node_modules
+.venv
+__pycache__
+*.pyc
+.git
+.env
+dist
+build
+storage/*.png
+storage/*.tiff

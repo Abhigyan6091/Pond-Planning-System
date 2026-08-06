@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', sans-serif;
+  }
+  code, pre {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom scrollbars for dark GIS UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0d14;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f293d;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}
+
+/* Custom Leaflet Map styling */
+.leaflet-container {
+  background-color: #07090e !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.leaflet-control-zoom a {
+  background-color: #121824 !important;
+  color: #3b82f6 !important;
+  border-color: #1f293d !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #1a2332 !important;
+  color: #60a5fa !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background-color: #121824 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #1f293d !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7) !important;
+}
+
+.leaflet-popup-tip {
+  background-color: #121824 !important;
+}

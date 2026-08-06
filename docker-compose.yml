@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  terrain-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: terrain_analyzer_app
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
