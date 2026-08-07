@@ -173,7 +173,16 @@ class DemService:
         """
         Try each real elevation source in order. Return (array, source_label).
         """
-        # ── 1a. OpenZenith concurrent point grid ─────────────────────────
+        # ── 1a. OpenTopography official REST API (with API Key) ───────────
+        try:
+            res_ot = cls._fetch_opentopography_official(south, west, north, east, res)
+            if res_ot is not None:
+                arr, label = res_ot
+                return arr, label
+        except Exception as e:
+            print(f"[DemService] OpenTopography official API failed: {e}")
+
+        # ── 1b. OpenZenith concurrent point grid ─────────────────────────
         try:
             arr = cls._fetch_openzenith_grid(south, west, north, east, res)
             if arr is not None:
@@ -181,7 +190,7 @@ class DemService:
         except Exception as e:
             print(f"[DemService] OpenZenith grid failed: {e}")
 
-        # ── 1b. OpenTopoData SRTM 30m batch ──────────────────────────────
+        # ── 1c. OpenTopoData SRTM 30m batch ──────────────────────────────
         for ds_url, label in [
             (OPENTOPODATA_SRTM30_URL, "SRTM-30m"),
             (OPENTOPODATA_ASTER_URL,  "ASTER-30m"),
@@ -194,9 +203,61 @@ class DemService:
             except Exception as e:
                 print(f"[DemService] {label} failed: {e}")
 
-        # ── 1c. Last resort – coordinate-seeded Perlin noise (no patterns) ─
+        # ── 1d. Last resort – coordinate-seeded Perlin noise (no patterns) ─
         print("[DemService] All network sources failed. Using geographic Perlin fallback.")
         return cls._geographic_perlin_dem(south, west, north, east, res), "Perlin-fallback"
+
+    # ─────────────────────────────────────────────────────
+    # OPENTOPOGRAPHY OFFICIAL API (COP30 / SRTMGL1)
+    # ─────────────────────────────────────────────────────
+    @classmethod
+    def _fetch_opentopography_official(
+        cls, south: float, west: float, north: float, east: float, res: int
+    ) -> Optional[Tuple[np.ndarray, str]]:
+        """
+        Fetch high-res DEM raster directly from OpenTopography API using API Key.
+        Returns (elevation_matrix, dataset_label) or None if request fails.
+        """
+        api_key = settings.OPENTOPOGRAPHY_API_KEY
+        if not api_key:
+            return None
+
+        # Try COP30 (Copernicus 30m) first, then SRTMGL1 (SRTM 30m)
+        for dem_type, label in [("COP30", "OpenTopography COP30"), ("SRTMGL1", "OpenTopography SRTMGL1")]:
+            params = {
+                "demtype": dem_type,
+                "south": f"{south:.6f}",
+                "north": f"{north:.6f}",
+                "west": f"{west:.6f}",
+                "east": f"{east:.6f}",
+                "outputFormat": "GTiff",
+                "API_Key": api_key
+            }
+            try:
+                r = requests.get(settings.OPENTOPOGRAPHY_API_URL, params=params, timeout=15)
+                if r.status_code == 200 and len(r.content) > 100:
+                    from rasterio.io import MemoryFile
+                    from rasterio.enums import Resampling
+                    with MemoryFile(r.content) as memfile:
+                        with memfile.open() as dataset:
+                            data = dataset.read(
+                                1,
+                                out_shape=(res, res),
+                                resampling=Resampling.bilinear
+                            ).astype(np.float64)
+                            nodata = dataset.nodata
+                            if nodata is not None:
+                                data[data == nodata] = np.nan
+                            data[data < -500] = np.nan
+                            data = cls._fill_nans(data)
+                            print(f"[DemService] OpenTopography {dem_type} successfully fetched! shape={data.shape}")
+                            return data, label
+                else:
+                    print(f"[DemService] OpenTopography {dem_type} status: {r.status_code}, response: {r.text[:100]}")
+            except Exception as e:
+                print(f"[DemService] OpenTopography {dem_type} failed: {e}")
+
+        return None
 
     # ─────────────────────────────────────────────────────
     # OPENZENITH  – concurrent single-point grid
