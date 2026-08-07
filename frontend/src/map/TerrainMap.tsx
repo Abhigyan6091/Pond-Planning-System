@@ -3,15 +3,18 @@ import {
   MapContainer, TileLayer, Marker, Rectangle, Polygon, Polyline,
   ImageOverlay, useMap, useMapEvents
 } from 'react-leaflet';
-import L from 'leaflet';
+import * as L from 'leaflet';
 import {
   LatLng, BoundingBox, ROISelectionMode, LayerVisibility,
   DemResponseData, ContourPolylineData, DropletPath, WatershedData,
-  MapInteractionMode, SlopeResponseData, PondInfo
+  MapInteractionMode, SlopeResponseData, PondInfo,
+  FlowVectorsData, StreamNetworkData,
 } from '../types/terrain';
 import { ContourLayer } from './ContourLayer';
 import { WaterDropletAnimation } from './WaterDropletAnimation';
 import { WatershedLayer } from './WatershedLayer';
+import { FlowVectorLayer } from './FlowVectorLayer';
+import { StreamNetworkLayer } from './StreamNetworkLayer';
 
 const customIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -105,13 +108,16 @@ interface TerrainMapProps {
   onAnalysisClick: (pt: LatLng) => void;
   watershedOutlet: LatLng | null;
   layers: LayerVisibility;
+  flowVectors: FlowVectorsData | null;
+  streamNetwork: StreamNetworkData | null;
 }
 
 export const TerrainMap: React.FC<TerrainMapProps> = ({
   selectedPoint, onPointSelect, computedBbox, roiMode, polygonPoints,
   onPolygonPointAdd, demData, contours, selectedContour, onSelectContour,
   slopeData, dropletPath, watershed, pond, profileTransect,
-  interactionMode, onAnalysisClick, watershedOutlet, layers
+  interactionMode, onAnalysisClick, watershedOutlet, layers,
+  flowVectors, streamNetwork,
 }) => {
   const initialCenter: [number, number] = [27.9881, 86.9250];
 
@@ -154,7 +160,7 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           />
         )}
 
-        {/* Polygon ROI (supports 3, 4, 5, 6, 8, 10+ vertices) */}
+        {/* Polygon ROI */}
         {polygonPoints.length > 0 && (
           <>
             <Polygon
@@ -172,20 +178,20 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           <ImageOverlay
             url={demData.elevation_overlay_url}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
-            opacity={0.7}
+            opacity={0.72}
           />
         )}
 
-        {/* Hillshade */}
+        {/* Hillshade — rendered on top of elevation, blends via RGBA alpha channel */}
         {demData && layers.hillshade && (
           <ImageOverlay
             url={demData.hillshade_overlay_url}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
-            opacity={0.6}
+            opacity={0.85}
           />
         )}
 
-        {/* Slope Heatmap — Feature 4 */}
+        {/* Slope Heatmap */}
         {slopeData && layers.slopeHeatmap && demData && (
           <ImageOverlay
             url={slopeData.slope_heatmap_url}
@@ -194,7 +200,12 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           />
         )}
 
-        {/* Contour Lines — Phase 2 */}
+        {/* Stream Network — below contours so contours appear on top */}
+        {streamNetwork && layers.streamNetwork && (
+          <StreamNetworkLayer streamNetwork={streamNetwork} />
+        )}
+
+        {/* Contour Lines */}
         {layers.contours && demData && contours.length > 0 && (
           <ContourLayer
             contours={contours}
@@ -205,12 +216,17 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           />
         )}
 
-        {/* Water Droplet Animation — Feature 5 */}
+        {/* Flow Direction Vectors */}
+        {flowVectors && layers.flowVectors && (
+          <FlowVectorLayer flowVectors={flowVectors} />
+        )}
+
+        {/* Water Droplet Animation */}
         {dropletPath && dropletPath.path.length > 1 && (
           <WaterDropletAnimation dropletPath={dropletPath} />
         )}
 
-        {/* Watershed Polygon — Feature 6 */}
+        {/* Watershed Polygon */}
         {watershed && layers.watershed && (
           <WatershedLayer watershed={watershed} />
         )}
@@ -220,12 +236,12 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           <Marker position={[watershedOutlet.lat, watershedOutlet.lng]} icon={outletIcon} />
         )}
 
-        {/* Pond Marker — Feature 7 & 8 */}
+        {/* Pond Marker */}
         {pond && (
           <Marker position={[pond.center.lat, pond.center.lng]} icon={pondIcon} />
         )}
 
-        {/* Transect Profile Line — Feature 9 */}
+        {/* Transect Profile Line */}
         {profileTransect.length > 0 && (
           <>
             <Polyline
@@ -257,7 +273,7 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
       )}
       {interactionMode === 'pond' && (
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[900] bg-blue-900/80 backdrop-blur-sm border border-blue-500/50 text-blue-200 text-xs px-4 py-2 rounded-full font-mono shadow-lg">
-          🛢️ Click a terrain depression/sink to calculate pond depth and storage volume
+          🛢️ Click a terrain depression, valley, or lake to calculate pond depth and storage volume
         </div>
       )}
       {interactionMode === 'profile' && (

@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   LatLng, BoundingBox, ROISelectionMode, DemProvider, LayerVisibility,
   DemResponseData, ContourPolylineData, SlopeResponseData, DropletPath,
-  WatershedData, MapInteractionMode, PondInfo, ElevationProfileResponseData, Terrain3DData
+  WatershedData, MapInteractionMode, PondInfo, ElevationProfileResponseData, Terrain3DData,
+  FlowVectorsData, StreamNetworkData,
 } from '../types/terrain';
 import { TopToolbar } from '../components/TopToolbar';
 import { LeftSidebar } from '../components/LeftSidebar';
@@ -45,6 +46,10 @@ export const Dashboard: React.FC = () => {
   const [data3D, setData3D] = useState<Terrain3DData | null>(null);
   const [is3DOpen, setIs3DOpen] = useState(false);
 
+  // --- New: Flow Vectors & Stream Network ---
+  const [flowVectors, setFlowVectors] = useState<FlowVectorsData | null>(null);
+  const [streamNetwork, setStreamNetwork] = useState<StreamNetworkData | null>(null);
+
   const [analysisLoading, setAnalysisLoading] = useState(false);
 
   const [layers, setLayers] = useState<LayerVisibility>({
@@ -53,6 +58,8 @@ export const Dashboard: React.FC = () => {
     hillshade: true,
     watershed: true,
     slopeHeatmap: false,
+    flowVectors: false,
+    streamNetwork: false,
   });
 
   const computedBbox: BoundingBox | null = useMemo(() => {
@@ -103,6 +110,8 @@ export const Dashboard: React.FC = () => {
     setSelectedContour(null);
     resetAnalysisState();
     setSlopeData(null);
+    setFlowVectors(null);
+    setStreamNetwork(null);
 
     try {
       const payload: any = { provider, dem_type: 'COP30', resolution: 100 };
@@ -127,6 +136,16 @@ export const Dashboard: React.FC = () => {
         res.metadata.dem_id, res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m
       );
       setSlopeData(sRes);
+
+      // Auto-compute flow vectors and stream network in background (don't block UI)
+      demService.fetchFlowVectors(
+        res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 4
+      ).then(setFlowVectors).catch(console.error);
+
+      demService.fetchStreamNetwork(
+        res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 50
+      ).then(setStreamNetwork).catch(console.error);
+
     } catch (err) {
       console.error(err);
       alert('Error fetching DEM. Check backend is running on port 8000.');
@@ -353,6 +372,8 @@ export const Dashboard: React.FC = () => {
         onAnalysisClick={handleAnalysisClick}
         watershedOutlet={watershedOutlet}
         layers={layers}
+        flowVectors={flowVectors}
+        streamNetwork={streamNetwork}
       />
     </div>
   );

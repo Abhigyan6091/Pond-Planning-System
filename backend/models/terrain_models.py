@@ -55,3 +55,39 @@ class WatershedResponse(BaseModel):
     catchment_area_m2: float
     perimeter_km: float
     avg_slope_deg: float
+
+
+class FlowVectorsRequest(BaseModel):
+    elevation_matrix: List[List[float]]
+    bounds: BoundingBox
+    pixel_size_m: float
+    sample_stride: int = 4  # Show 1 arrow per N cells (reduces clutter)
+
+
+class FlowVector(BaseModel):
+    lat: float
+    lng: float
+    direction_idx: int   # 0..7 → E, SE, S, SW, W, NW, N, NE
+    slope_deg: float
+
+
+class FlowVectorsResponse(BaseModel):
+    success: bool
+    vectors: List[FlowVector]
+
+
+class StreamNetworkRequest(BaseModel):
+    elevation_matrix: List[List[float]]
+    bounds: BoundingBox
+    pixel_size_m: float
+    accumulation_threshold: int = 50  # Cells needed upstream to count as stream
+
+
+class StreamSegment(BaseModel):
+    coordinates: List[List[float]]  # [[lng, lat], ...]
+    stream_order: int
+
+
+class StreamNetworkResponse(BaseModel):
+    success: bool
+    segments: List[StreamSegment]

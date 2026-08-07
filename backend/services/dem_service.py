@@ -435,8 +435,8 @@ class DemService:
         elev_matrix: np.ndarray, pixel_size_m: float, save_path: str,
         azimuth: float = 315.0, altitude: float = 45.0
     ) -> None:
-        """Horn's method hillshade."""
-        azimuth_rad = np.radians(315.0 - azimuth)
+        """Horn's method hillshade — saved as RGBA so Leaflet ImageOverlay composites correctly."""
+        azimuth_rad = np.radians(360.0 - azimuth)
         altitude_rad = np.radians(altitude)
 
         dy, dx = np.gradient(elev_matrix, pixel_size_m)
@@ -447,5 +447,23 @@ class DemService:
             np.sin(altitude_rad) * np.cos(slope)
             + np.cos(altitude_rad) * np.sin(slope) * np.cos(azimuth_rad - aspect)
         )
-        shaded = np.clip((shaded + 1.0) / 2.0, 0.0, 1.0)
-        Image.fromarray((shaded * 255).astype(np.uint8)).save(save_path, "PNG")
+        # Map shaded to [0, 255]
+        shaded = np.clip(shaded, -1.0, 1.0)
+        # Normalize: dark shadowed areas → 0 brightness, lit areas → 255
+        brightness = ((shaded + 1.0) / 2.0 * 255.0).astype(np.uint8)
+
+        # Build RGBA: grayscale brightness in R/G/B channels, varying alpha
+        # Lit areas are semi-transparent (so color overlay shows through),
+        # very dark shadow areas are more opaque (deep shadow effect)
+        h, w = brightness.shape
+        rgba = np.zeros((h, w, 4), dtype=np.uint8)
+        rgba[:, :, 0] = brightness          # R
+        rgba[:, :, 1] = brightness          # G
+        rgba[:, :, 2] = brightness          # B
+        # Alpha: shadowed areas (dark) get opacity ~140, lit areas ~60 for natural blend
+        alpha = (255 - brightness.astype(np.int16)).clip(0, 255).astype(np.uint8)
+        alpha = (alpha * 0.65).astype(np.uint8)
+        rgba[:, :, 3] = alpha
+
+        Image.fromarray(rgba, mode='RGBA').save(save_path, "PNG")
+

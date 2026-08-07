@@ -3,7 +3,8 @@ import {
   DemRequestPayload, DemResponseData,
   ContourResponseData, BoundingBox,
   SlopeResponseData, DropletPath, WatershedData, LatLng,
-  PondResponseData, ElevationProfileResponseData, Terrain3DData, ContourPolylineData
+  PondResponseData, ElevationProfileResponseData, Terrain3DData, ContourPolylineData,
+  FlowVectorsData, StreamNetworkData
 } from '../types/terrain';
 
 const API_BASE = '/api';
@@ -165,6 +166,36 @@ export const demService = {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  },
+
+  fetchFlowVectors: async (
+    elevationMatrix: number[][],
+    bounds: BoundingBox,
+    pixelSizeM: number,
+    sampleStride: number = 4
+  ): Promise<FlowVectorsData> => {
+    const response = await axios.post<FlowVectorsData>(`${API_BASE}/hydrology/flow-vectors`, {
+      elevation_matrix: elevationMatrix,
+      bounds,
+      pixel_size_m: pixelSizeM,
+      sample_stride: sampleStride,
+    });
+    return response.data;
+  },
+
+  fetchStreamNetwork: async (
+    elevationMatrix: number[][],
+    bounds: BoundingBox,
+    pixelSizeM: number,
+    accumulationThreshold: number = 50
+  ): Promise<StreamNetworkData> => {
+    const response = await axios.post<StreamNetworkData>(`${API_BASE}/hydrology/stream-network`, {
+      elevation_matrix: elevationMatrix,
+      bounds,
+      pixel_size_m: pixelSizeM,
+      accumulation_threshold: accumulationThreshold,
+    });
+    return response.data;
   },
 
   geocodeLocation: async (query: string): Promise<{ lat: number; lng: number; displayName: string } | null> => {

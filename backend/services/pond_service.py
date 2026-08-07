@@ -5,16 +5,24 @@ Detects and analyses local depressions (ponds/sinks) in DEM.
 Algorithm:
   1. Fill-and-diff: fill sinks in DEM (priority-queue flood fill, the standard
      Priority-Flood algorithm), then subtract original to find depression depth.
-  2. Label connected depression cells via scipy.ndimage.label.
+  2. Label connected depression regions via scipy.ndimage.label.
   3. For the clicked cell, recover that depression's label region.
+     If no depression is at the exact click, search in an expanding radius.
   4. Estimate pond volume by summing (water_level - elev) * pixel_area for each
      cell in the depression (trapezoidal approximation across depth layers).
+
+Improvements over v1:
+  - Lower depression threshold (0.05 m instead of 0.1 m) to catch shallow water bodies
+  - Pre-smoothing the DEM slightly to remove API noise before depression detection
+  - Expanding-radius search if exact click cell has no depression (up to 8-cell radius)
+  - Flat-region detection: areas that are locally flat and bounded by higher terrain
+    are treated as candidate water bodies even if Priority-Flood doesn't mark them
 """
 import uuid
 import math
 import heapq
 import numpy as np
-from scipy.ndimage import label as nd_label
+from scipy.ndimage import label as nd_label, uniform_filter
 from typing import Tuple, List, Optional
 from collections import deque
 
@@ -61,6 +69,41 @@ class PondService:
 
         return filled
 
+    @staticmethod
+    def _find_flat_water_bodies(dem: np.ndarray, min_flat_cells: int = 4) -> np.ndarray:
+        """
+        Detects flat regions that could represent water bodies (lakes, reservoirs).
+        A flat region is where local elevation variance is very small but surrounded
+        by higher terrain.
+        Returns a boolean mask of flat candidate water cells.
+        """
+        rows, cols = dem.shape
+        # Local std dev over 3x3 window
+        local_mean = uniform_filter(dem, size=3, mode='nearest')
+        local_sq_mean = uniform_filter(dem**2, size=3, mode='nearest')
+        local_var = np.maximum(0, local_sq_mean - local_mean**2)
+        local_std = np.sqrt(local_var)
+
+        # Cells that are very flat (std < 1m in 3x3 neighborhood)
+        flat_mask = local_std < 1.0
+
+        # Of those flat cells, check if they are below their surrounding mean
+        # (i.e. the flat area sits in a basin)
+        local_mean_5 = uniform_filter(dem, size=5, mode='nearest')
+        basin_mask = flat_mask & (dem < local_mean_5 + 0.5)
+
+        # Label connected regions
+        labeled, n = nd_label(basin_mask)
+
+        # Keep only regions with enough cells
+        result = np.zeros_like(basin_mask)
+        for lbl in range(1, n + 1):
+            region = labeled == lbl
+            if region.sum() >= min_flat_cells:
+                result |= region
+
+        return result
+
     @classmethod
     def detect_pond(cls, request: PondRequest) -> PondResponse:
         dem = np.array(request.elevation_matrix, dtype=float)
@@ -80,32 +123,74 @@ class PondService:
         click_r = max(0, min(click_r, rows - 1))
         click_c = max(0, min(click_c, cols - 1))
 
-        # Fill sinks and compute depression depth
-        filled = cls._priority_flood_fill(dem)
-        depth = filled - dem           # > 0 only at depression cells
-        depression_mask = depth > 0.1  # Threshold: ignore trivial noise
+        # Lightly smooth DEM to reduce API noise before depression detection
+        dem_smooth = uniform_filter(dem, size=3, mode='nearest')
 
-        # No depression at this cell
-        if not depression_mask[click_r, click_c]:
-            return PondResponse(
-                success=False,
-                message="No significant depression detected at clicked location. Try clicking in a valley or basin."
-            )
+        # Fill sinks and compute depression depth
+        filled = cls._priority_flood_fill(dem_smooth)
+        depth = filled - dem_smooth           # > 0 only at depression cells
+        depression_mask = depth > 0.05        # Lowered threshold: 0.05 m (was 0.1 m)
+
+        # Also check flat water body regions
+        flat_water_mask = cls._find_flat_water_bodies(dem_smooth, min_flat_cells=4)
+
+        # Combined mask
+        combined_mask = depression_mask | flat_water_mask
+
+        # Check if click cell has a depression; if not, search expanding radius
+        found_r, found_c = click_r, click_c
+        if not combined_mask[click_r, click_c]:
+            # Search in expanding radius up to 8 cells
+            found = False
+            for radius in range(1, 9):
+                best_depth = 0.0
+                best_r, best_c = -1, -1
+                for dr in range(-radius, radius + 1):
+                    for dc in range(-radius, radius + 1):
+                        if abs(dr) != radius and abs(dc) != radius:
+                            continue  # Only check the ring border
+                        nr, nc = click_r + dr, click_c + dc
+                        if 0 <= nr < rows and 0 <= nc < cols and combined_mask[nr, nc]:
+                            d = float(depth[nr, nc])
+                            if d > best_depth:
+                                best_depth = d
+                                best_r, best_c = nr, nc
+                if best_r >= 0:
+                    found_r, found_c = best_r, best_c
+                    found = True
+                    break
+
+            if not found:
+                return PondResponse(
+                    success=False,
+                    message=(
+                        "No depression or water body detected near the clicked location. "
+                        "Try clicking directly on a valley, basin, or lake bed. "
+                        "Zoom in for better precision."
+                    )
+                )
 
         # Label connected depression regions
-        labeled, num_features = nd_label(depression_mask)
-        pond_label = labeled[click_r, click_c]
+        labeled, num_features = nd_label(combined_mask)
+        pond_label = labeled[found_r, found_c]
+        if pond_label == 0:
+            return PondResponse(
+                success=False,
+                message="No connected depression found at this location."
+            )
+
         pond_cells = np.argwhere(labeled == pond_label)
 
-        # Water level = maximum filled elevation at depression boundary
-        # (i.e. lowest spill point = min of filled across depression)
-        cell_filled = filled[labeled == pond_label]
+        # Water level = minimum filled elevation across the depression
+        # (= lowest spill point)
+        pond_indices = labeled == pond_label
+        cell_filled = filled[pond_indices]
         water_level = float(np.min(cell_filled))
 
-        # Elevations inside the depression
-        cell_elevs = dem[labeled == pond_label]
+        # Elevations inside the depression (use original DEM, not smoothed)
+        cell_elevs = dem[pond_indices]
         bottom_elev = float(np.min(cell_elevs))
-        max_depth = water_level - bottom_elev
+        max_depth = max(0.0, water_level - bottom_elev)
 
         # Surface area
         pixel_area_m2 = pxm * pxm
@@ -113,7 +198,6 @@ class PondService:
         surface_area_km2 = surface_area_m2 / 1_000_000.0
 
         # Volume by summing depth * pixel_area for each cell
-        # (equivalent to trapezoidal integration over horizontal layers)
         depths_per_cell = np.maximum(0.0, water_level - cell_elevs)
         volume_m3 = float(np.sum(depths_per_cell) * pixel_area_m2)
         volume_km3 = volume_m3 / 1e9
@@ -138,4 +222,4 @@ class PondService:
             volume_km3=round(volume_km3, 9),
             catchment_cells=int(len(pond_cells)),
         )
-        return PondResponse(success=True, pond=pond, message="Pond depression detected successfully.")
+        return PondResponse(success=True, pond=pond, message="Water body / depression detected successfully.")

@@ -155,4 +155,29 @@ export interface LayerVisibility {
   hillshade: boolean;
   watershed: boolean;
   slopeHeatmap: boolean;
+  flowVectors: boolean;
+  streamNetwork: boolean;
 }
+
+export interface FlowVector {
+  lat: number;
+  lng: number;
+  direction_idx: number;  // 0..7 → E, SE, S, SW, W, NW, N, NE
+  slope_deg: number;
+}
+
+export interface FlowVectorsData {
+  success: boolean;
+  vectors: FlowVector[];
+}
+
+export interface StreamSegment {
+  coordinates: number[][];  // [[lng, lat], ...]
+  stream_order: number;
+}
+
+export interface StreamNetworkData {
+  success: boolean;
+  segments: StreamSegment[];
+}
+

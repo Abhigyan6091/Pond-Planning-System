@@ -24,6 +24,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     { key: 'contours', label: 'Contour Lines', icon: <Activity className="w-4 h-4" />, color: 'text-emerald-400' },
     { key: 'slopeHeatmap', label: 'Slope Heatmap', icon: <ShieldAlert className="w-4 h-4" />, color: 'text-rose-400' },
     { key: 'watershed', label: 'Watershed Catchment', icon: <Waves className="w-4 h-4" />, color: 'text-indigo-400' },
+    { key: 'flowVectors', label: 'Flow Direction Vectors', icon: <Compass className="w-4 h-4" />, color: 'text-orange-400' },
+    { key: 'streamNetwork', label: 'Stream Networks', icon: <GitBranch className="w-4 h-4" />, color: 'text-blue-400' },
   ];
 
   const handleExportGeoJSON = () => {
