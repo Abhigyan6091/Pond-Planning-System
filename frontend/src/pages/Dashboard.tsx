@@ -58,8 +58,8 @@ export const Dashboard: React.FC = () => {
     hillshade: true,
     watershed: true,
     slopeHeatmap: false,
-    flowVectors: false,
-    streamNetwork: false,
+    flowVectors: true,
+    streamNetwork: true,
   });
 
   const computedBbox: BoundingBox | null = useMemo(() => {
@@ -74,8 +74,24 @@ export const Dashboard: React.FC = () => {
     };
   }, [selectedPoint, radiusKm]);
 
-  const handleToggleLayer = (key: keyof LayerVisibility) =>
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+  const handleToggleLayer = (key: keyof LayerVisibility) => {
+    setLayers((prev) => {
+      const nextVal = !prev[key];
+      if (nextVal && demData) {
+        if (key === 'flowVectors' && !flowVectors) {
+          demService.fetchFlowVectors(
+            demData.elevation_matrix, demData.metadata.bounds, demData.metadata.pixel_size_m, 2
+          ).then(setFlowVectors).catch(console.error);
+        }
+        if (key === 'streamNetwork' && !streamNetwork) {
+          demService.fetchStreamNetwork(
+            demData.elevation_matrix, demData.metadata.bounds, demData.metadata.pixel_size_m, 20
+          ).then(setStreamNetwork).catch(console.error);
+        }
+      }
+      return { ...prev, [key]: nextVal };
+    });
+  };
 
   const handleRoiModeChange = (mode: ROISelectionMode) => {
     setRoiMode(mode);
@@ -139,11 +155,11 @@ export const Dashboard: React.FC = () => {
 
       // Auto-compute flow vectors and stream network in background (don't block UI)
       demService.fetchFlowVectors(
-        res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 4
+        res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 2
       ).then(setFlowVectors).catch(console.error);
 
       demService.fetchStreamNetwork(
-        res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 50
+        res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 20
       ).then(setStreamNetwork).catch(console.error);
 
     } catch (err) {

@@ -8,8 +8,8 @@ interface FlowVectorLayerProps {
 }
 
 // D8 direction offsets → angle in degrees (for arrow rendering)
-// 0: E, 1: SE, 2: S, 3: SW, 4: W, 5: NW, 6: N, 7: NE
-const DIR_ANGLES: number[] = [0, 45, 90, 135, 180, 225, 270, 315];
+// 0: E (90°), 1: SE (135°), 2: S (180°), 3: SW (225°), 4: W (270°), 5: NW (315°), 6: N (0°), 7: NE (45°)
+const DIR_ANGLES: number[] = [90, 135, 180, 225, 270, 315, 0, 45];
 
 function getArrowColor(slopeDeg: number): string {
   if (slopeDeg < 5) return '#38bdf8';   // flat - light blue

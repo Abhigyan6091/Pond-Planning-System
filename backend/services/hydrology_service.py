@@ -342,6 +342,13 @@ class HydrologyService:
         flow_dir = cls.compute_d8_flow_direction(elev_matrix, request.pixel_size_m)
         accumulation = cls.compute_flow_accumulation(flow_dir)
 
+        max_acc = int(np.max(accumulation))
+        # Dynamically scale threshold relative to grid size and max accumulation
+        if threshold <= 0 or threshold >= max_acc:
+            threshold = max(3, int(max_acc * 0.08))
+        else:
+            threshold = min(threshold, max(3, int(max_acc * 0.15)))
+
         # Stream mask: cells with enough upstream flow
         stream_mask = accumulation >= threshold
 

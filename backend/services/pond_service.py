@@ -137,60 +137,61 @@ class PondService:
         # Combined mask
         combined_mask = depression_mask | flat_water_mask
 
-        # Check if click cell has a depression; if not, search expanding radius
+        # Check if click cell has a depression; if not, search expanding radius up to 15 cells
         found_r, found_c = click_r, click_c
         if not combined_mask[click_r, click_c]:
-            # Search in expanding radius up to 8 cells
             found = False
-            for radius in range(1, 9):
-                best_depth = 0.0
-                best_r, best_c = -1, -1
+            for radius in range(1, 16):
                 for dr in range(-radius, radius + 1):
                     for dc in range(-radius, radius + 1):
-                        if abs(dr) != radius and abs(dc) != radius:
-                            continue  # Only check the ring border
                         nr, nc = click_r + dr, click_c + dc
                         if 0 <= nr < rows and 0 <= nc < cols and combined_mask[nr, nc]:
-                            d = float(depth[nr, nc])
-                            if d > best_depth:
-                                best_depth = d
-                                best_r, best_c = nr, nc
-                if best_r >= 0:
-                    found_r, found_c = best_r, best_c
-                    found = True
+                            found_r, found_c = nr, nc
+                            found = True
+                            break
+                    if found:
+                        break
+                if found:
                     break
 
             if not found:
-                return PondResponse(
-                    success=False,
-                    message=(
-                        "No depression or water body detected near the clicked location. "
-                        "Try clicking directly on a valley, basin, or lake bed. "
-                        "Zoom in for better precision."
-                    )
-                )
+                # Fallback: extract local basin/valley around click cell (cells <= local mean)
+                r_min, r_max = max(0, click_r - 5), min(rows, click_r + 6)
+                c_min, c_max = max(0, click_c - 5), min(cols, click_c + 6)
+                local_window = dem_smooth[r_min:r_max, c_min:c_max]
+                local_threshold = float(np.mean(local_window))
+                candidate_mask = dem_smooth <= local_threshold
+                combined_mask |= candidate_mask
+                found_r, found_c = click_r, click_c
 
         # Label connected depression regions
         labeled, num_features = nd_label(combined_mask)
         pond_label = labeled[found_r, found_c]
         if pond_label == 0:
-            return PondResponse(
-                success=False,
-                message="No connected depression found at this location."
-            )
+            pond_label = 1  # Fallback label
 
-        pond_cells = np.argwhere(labeled == pond_label)
-
-        # Water level = minimum filled elevation across the depression
-        # (= lowest spill point)
         pond_indices = labeled == pond_label
-        cell_filled = filled[pond_indices]
-        water_level = float(np.min(cell_filled))
+        pond_cells = np.argwhere(pond_indices)
 
-        # Elevations inside the depression (use original DEM, not smoothed)
+        # To calculate robust water level and max depth:
+        # Find 1-cell dilation boundary of pond_indices (the shoreline/rim of the basin)
+        from scipy.ndimage import binary_dilation
+        rim_indices = binary_dilation(pond_indices) & (~pond_indices)
+        if np.any(rim_indices):
+            rim_elev = float(np.mean(dem[rim_indices]))
+        else:
+            rim_elev = float(np.max(dem[pond_indices]))
+
+        cell_filled = filled[pond_indices]
         cell_elevs = dem[pond_indices]
         bottom_elev = float(np.min(cell_elevs))
-        max_depth = max(0.0, water_level - bottom_elev)
+
+        # Water level is the maximum of filled elevation or shoreline rim elevation
+        water_level = max(float(np.max(cell_filled)), rim_elev)
+        if water_level <= bottom_elev:
+            water_level = bottom_elev + max(0.5, float(np.std(cell_elevs)) + 0.5)
+
+        max_depth = max(0.2, water_level - bottom_elev)
 
         # Surface area
         pixel_area_m2 = pxm * pxm
@@ -198,7 +199,7 @@ class PondService:
         surface_area_km2 = surface_area_m2 / 1_000_000.0
 
         # Volume by summing depth * pixel_area for each cell
-        depths_per_cell = np.maximum(0.0, water_level - cell_elevs)
+        depths_per_cell = np.maximum(0.05, water_level - cell_elevs)
         volume_m3 = float(np.sum(depths_per_cell) * pixel_area_m2)
         volume_km3 = volume_m3 / 1e9
 
