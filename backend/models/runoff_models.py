@@ -29,7 +29,7 @@ class RunoffRequest(BaseModel):
     runoff_coefficient: float = Field(
         default=0.40,
         ge=0.05, le=0.95,
-        description="Rational Method runoff coefficient C (0.05–0.95)"
+        description="Runoff Coefficient C (0.05–0.95)"
     )
     coefficient_preset: Optional[Literal["low", "medium", "high", "urban"]] = None
 
@@ -45,10 +45,10 @@ class RunoffResponse(BaseModel):
     runoff_volume_million_m3: float # same, in million m³
     pond_fill_count: float          # How many times this runoff could fill the recommended pond (filled externally)
     methodology: str = (
-        "Rational Method: V = P × A × C  where  "
-        "P = rainfall depth (m),  A = catchment area (m²),  "
-        "C = runoff coefficient (dimensionless).  "
-        "This is a planning-level estimate only."
+        "Runoff Coefficient Method: V = P × A × C  where  "
+        "P = rainfall depth (m), A = catchment area (m²), "
+        "C = runoff coefficient (dimensionless). "
+        "Note: This estimates total seasonal volume V = P × A × C, distinct from the classical Rational Method for peak discharge Q = C · i · A."
     )
     assumption_note: str = (
         "Runoff coefficient is an approximate default for the selected land-use class. "

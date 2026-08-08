@@ -31,7 +31,11 @@ class TestDemSanity:
             assert np.nanmax(dem) <= 9000.0, "Elevation above 9000m is implausible"
 
     def test_perlin_fallback_no_checkerboard(self):
-        """Geographic Perlin fallback must NOT produce repeating checkerboard patterns."""
+        """
+        Geographic Perlin fallback must NOT produce repeating checkerboard patterns.
+        ACADEMIC NOTICE: This test validates ONLY the synthetic fallback generator's
+        determinism and non-repeatability. It does NOT validate real-world satellite DEM acquisition.
+        """
         # Two different locations should produce very different arrays
         dem1 = DemService._geographic_perlin_dem(27.9, 86.9, 28.0, 87.0, 20)
         dem2 = DemService._geographic_perlin_dem(13.0, 77.5, 13.1, 77.6, 20)

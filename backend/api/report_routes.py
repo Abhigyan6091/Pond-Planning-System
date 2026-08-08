@@ -253,9 +253,10 @@ def _build_report_html(req: ReportRequest) -> str:
     <li><strong>Catchment delineation:</strong> Reverse BFS on D8 flow pointers from outlet cell</li>
     <li><strong>Depression detection:</strong> Priority-Flood (Wang & Liu 2006) sink-fill algorithm</li>
     <li><strong>Suitability scoring:</strong> Weighted composite of slope, depression, catchment, elevation, rainfall (each normalised 0–1)</li>
-    <li><strong>Runoff estimation:</strong> Rational Method V = P × A × C. Coefficient C is an approximate land-use default</li>
+    <li><strong>Runoff estimation:</strong> Runoff Coefficient Method V = P × A × C (distinct from peak discharge Q = C · i · A). Coefficient C is an approximate land-use default</li>
     <li><strong>Rainfall data:</strong> Open-Meteo Archive API — 9 km ERA5 reanalysis, free open-source</li>
-    <li><strong>Physical distances:</strong> Haversine geodesic formula; areas use local planar projection</li>
+    <li><strong>Physical distances & areas:</strong> Haversine geodesic distance for lengths; planar polygon area using the Shoelace formula after conversion to an appropriate metric coordinate system</li>
+    <li><strong>Pond storage:</strong> Stage-Storage Curve V(z) = ∑ max(0, z - E_i) ΔA_i raster integration</li>
   </ul>
 </section>
 

@@ -124,7 +124,7 @@ class DemService:
         overlay_path = os.path.join(settings.STORAGE_DIR, overlay_filename)
         cls._create_elevation_overlay(nan_matrix, min_elev, max_elev, overlay_path)
 
-        # 7. Hillshade PNG (Horn's method)
+        # 7. Hillshade PNG (central finite differences gradient)
         hillshade_filename = f"{dem_id}_hillshade.png"
         hillshade_path = os.path.join(settings.STORAGE_DIR, hillshade_filename)
         cls._create_hillshade_overlay(elev_matrix, pixel_size_m, hillshade_path)
@@ -499,7 +499,7 @@ class DemService:
         elev_matrix: np.ndarray, pixel_size_m: float, save_path: str,
         azimuth: float = 315.0, altitude: float = 45.0
     ) -> None:
-        """Horn's method hillshade — saved as RGBA so Leaflet ImageOverlay composites correctly."""
+        """Hillshade calculation via central finite differences gradient — saved as RGBA so Leaflet ImageOverlay composites correctly."""
         azimuth_rad = np.radians(360.0 - azimuth)
         altitude_rad = np.radians(altitude)
 

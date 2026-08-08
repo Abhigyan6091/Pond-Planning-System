@@ -1,6 +1,6 @@
 # VILLAGE POND PLANNING SYSTEM 🛰️💧
 
-> **AI/GIS-Based Academic Decision Support System** for identifying suitable village pond construction sites using geospatial Digital Elevation Models (DEMs), Open-Meteo historical rainfall data, Rational Method runoff estimation, weighted composite terrain suitability modeling, and interactive 3D/basemap visualizers.
+> **AI/GIS-Based Academic Decision Support System** for identifying suitable village pond construction sites using geospatial Digital Elevation Models (DEMs), Open-Meteo historical rainfall data, Runoff Coefficient Method volume estimation, weighted composite terrain suitability modeling, and interactive 3D/basemap visualizers.
 
 ---
 
@@ -9,8 +9,8 @@
 - **Geospatial Location Search**: Geocoding via Nominatim/OpenStreetMap with automatic ROI bounding box calculation.
 - **Multi-Source DEM Pipeline**: On-the-fly acquisition via OpenTopography (COP30/SRTMGL1), OpenZenith (Copernicus GLO-30), OpenTopoData, or fallback coordinate-seeded Perlin noise.
 - **Basemap Imagery Switcher**: Instant switching between **ESRI World Imagery (Satellite)**, **CartoDB Dark (Street)**, and **OpenTopoMap (Topographic)** layers.
-- **Marching Squares Contour Generation**: Fast contour polyline extraction at customizable intervals (10m, 20m, 50m, 100m) with polyline length (m/km), vertex count, and enclosed area ($m^2$/$km^2$ via local planar projection).
-- **Slope & Aspect Engine**: Finite-difference gradient field calculation with interactive YlOrRd slope heatmap overlays.
+- **Marching Squares Contour Generation**: Fast contour polyline extraction at customizable intervals (10m, 20m, 50m, 100m) with polyline length (m/km), vertex count, and enclosed area ($m^2$/$km^2$ via planar polygon area using the Shoelace formula after conversion to an appropriate metric coordinate system).
+- **Slope & Aspect Engine**: Central finite difference gradient calculation (`np.gradient`) with interactive YlOrRd slope heatmap overlays.
 - **D8 Hydrological Engine**:
   - D8 steepest-descent flow direction matrix calculation.
   - **Flow Accumulation Grid** calculating upstream cell counts across the entire region.
@@ -21,7 +21,7 @@
   - Fetches 10+ years of daily precipitation records (1940–present).
   - Summarizes annual averages, monsoon totals (Jun–Sep), monthly distributions, and climate aridity classification (Arid, Semi-Arid, Sub-Humid, Humid, Very Humid).
 - **Surface Runoff Estimation Engine**:
-  - Calculates annual runoff volume using the **Rational Method** ($V = P \times A \times C$).
+  - Calculates annual runoff volume using the **Runoff Coefficient Method** ($V = P \times A \times C$), distinct from the classical peak discharge Rational Method ($Q = C \cdot i \cdot A$).
   - Configurable land-use presets ($C = 0.15 \dots 0.85$).
 - **Candidate Pond Site Detection & Suitability Scoring**:
   - Identifies top-N candidate pond sites across the region with minimum spatial separation.
@@ -53,13 +53,13 @@ flowchart TD
         Contour["ContourService (Marching Squares & Planar Area)"]
         Hydro["HydrologyService (D8 Flow Direction & Accumulation)"]
         Pond["PondService (Priority-Flood Sink Filling)"]
-        Terrain["TerrainService (Slope & Aspect Finite Gradient)"]
+        Terrain["TerrainService (Slope & Aspect Central Gradient)"]
     end
 
     subgraph Planning_Engine["Hydrology & Planning Engine"]
         direction TB
         Rain["RainfallService (Open-Meteo Archive API)"]
-        Runoff["RunoffService (Rational Method V = P × A × C)"]
+        Runoff["RunoffService (Runoff Coefficient Method V = P × A × C)"]
         Suit["SuitabilityService (Composite Land Scoring)"]
         Report["ReportService (Printable HTML Generator)"]
         Export["ExportService (GeoJSON & CSV Exporters)"]
@@ -94,13 +94,13 @@ $$t = \frac{C - E_A}{E_B - E_A} \implies P = (1 - t)P_A + t P_B$$
 ### 2. Physical Distance & Planar Area Calculations
 - **Haversine Geodesic Distance**:
   $$d = 2 R \arcsin \left( \sqrt{ \sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_1) \cos(\phi_2) \sin^2\left(\frac{\Delta \lambda}{2}\right) } \right)$$
-- **Local Planar Projection Area**: Polygons are projected onto planar meter coordinates at the centroid latitude ($\phi_c$) using scale factors:
+- **Planar Polygon Area**: Polygons are projected onto planar meter coordinates at the centroid latitude ($\phi_c$) using scale factors:
   $$\Delta y = \Delta \phi \times 111,000 \text{ m}, \quad \Delta x = \Delta \lambda \times 111,000 \cos(\phi_c) \text{ m}$$
-  Area is computed via the Shoelace Formula:
+  Planar polygon area using the Shoelace formula after conversion to an appropriate metric coordinate system:
   $$\text{Area} = \frac{1}{2} \left| \sum_{i=1}^{n-1} (x_i y_{i+1} - x_{i+1} y_i) + (x_n y_1 - x_1 y_n) \right|$$
 
 ### 3. Slope & Aspect Field
-Local elevation gradients $\frac{\partial E}{\partial x}$ and $\frac{\partial E}{\partial y}$ are computed using central finite differences:
+Local elevation gradients $\frac{\partial E}{\partial x}$ and $\frac{\partial E}{\partial y}$ are computed using central finite differences (`np.gradient`):
 
 $$\text{Slope (°)} = \arctan \sqrt{\left(\frac{\partial E}{\partial x}\right)^2 + \left(\frac{\partial E}{\partial y}\right)^2} \times \frac{180}{\pi}$$
 
@@ -111,14 +111,16 @@ Flow direction is assigned to the neighbor in the $3 \times 3$ cell window with 
 
 $$\text{Drop}_{i,j} = \frac{E_{\text{center}} - E_{i,j}}{\text{Distance}_{i,j}}$$
 
-Flow accumulation ($A_{\text{cell}}$) is computed recursively or iteratively, counting the total number of upstream contributing cells that drain into each target cell.
+Flow accumulation ($A_{\text{cell}}$) is computed iteratively, counting the total number of upstream contributing cells that drain into each target cell.
 
-### 5. Depression Sink Filling (Priority-Flood)
-Depression sinks are identified using the Priority-Flood algorithm (Wang & Liu 2006). For each cell in a labeled depression:
+### 5. Depression Sink Filling & Stage-Storage Formulation
+Depression sinks are identified using the Priority-Flood algorithm (Wang & Liu 2006). Pond storage volume at target water level elevation $z$ is derived using the raster grid summation:
 
-$$V_{\text{total}} = \sum_{(r,c) \in \text{Depression}} \max(0, E_{\text{water level}} - E_{r,c}) \times A_{\text{pixel}}$$
+$$V(z) = \sum_{i} \max(0, z - E_i) \, \Delta A_i$$
 
-### 6. Surface Runoff Estimation (Rational Method)
+where $E_i$ is the elevation of cell $i$ and $\Delta A_i$ is the cell area ($\text{pixel\_size\_m}^2$). The resulting relationship $z \to V(z)$ is evaluated across discrete depth levels as a **Stage-Storage Curve**.
+
+### 6. Surface Runoff Estimation (Runoff Coefficient Method)
 Annual surface runoff volume ($V$) is estimated using:
 
 $$V = P \times A \times C$$
@@ -127,6 +129,8 @@ Where:
 - $P$ = Annual rainfall depth ($\text{m}$)
 - $A$ = Catchment area ($\text{m}^2$)
 - $C$ = Dimensionless runoff coefficient ($0.05 \le C \le 0.95$)
+
+*Note: This estimates total seasonal volume $V = P \times A \times C$, distinct from the classical peak discharge Rational Method ($Q = C \cdot i \cdot A$, where $i$ is rainfall intensity).*
 
 ### 7. Land Suitability Scoring Model
 Each DEM grid cell is evaluated across 5 normalized score components ($S_i \in [0, 1]$):
@@ -139,6 +143,13 @@ Each DEM grid cell is evaluated across 5 normalized score components ($S_i \in [
 Composite Suitability Score ($S \in [0, 100]$):
 
 $$S = 100 \times \sum_{i=1}^5 w_i S_i \quad \text{where } \sum w_i = 1.0$$
+
+Itemized Points Breakdown out of 100:
+- Slope: up to 20 pts
+- Depression Depth: up to 20 pts
+- Catchment & Flow: up to 25 pts
+- Elevation Lowness: up to 15 pts
+- Rainfall Depth: up to 20 pts
 
 ---
 
@@ -201,9 +212,9 @@ Open browser at: `http://localhost:3000`
 | `POST` | `/api/hydrology/flow-vectors` | Returns D8 flow direction vector grid |
 | `POST` | `/api/hydrology/stream-network` | Extracts stream channels above threshold |
 | `POST` | `/api/rainfall/historical` | Fetches daily precipitation records from Open-Meteo |
-| `POST` | `/api/runoff/estimate` | Calculates surface runoff volume via Rational Method |
+| `POST` | `/api/runoff/estimate` | Calculates surface runoff volume via Runoff Coefficient Method |
 | `POST` | `/api/suitability/analyze` | Scores terrain and returns ranked candidate pond sites |
-| `POST` | `/api/analysis/pond` | Calculates pond depth & storage volume via Priority-Flood |
+| `POST` | `/api/analysis/pond` | Calculates pond depth & Stage-Storage Curve |
 | `POST` | `/api/analysis/elevation-profile` | Samples DEM along transect line using bilinear interpolation |
 | `POST` | `/api/analysis/terrain-3d` | Generates 3D surface mesh for Plotly rendering |
 | `POST` | `/api/report/generate` | Generates printable HTML planning report |

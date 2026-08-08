@@ -8,9 +8,10 @@ router = APIRouter(prefix="/runoff", tags=["Runoff"])
 @router.post("/estimate", response_model=RunoffResponse)
 def estimate_runoff(request: RunoffRequest):
     """
-    Estimates annual surface runoff volume using the Rational Method:
+    Estimates annual surface runoff volume using the Runoff Coefficient Method:
         V = P × A × C
     where P = rainfall depth (m), A = catchment area (m²), C = runoff coefficient.
+    Note: Distinguish total seasonal volume V = P × A × C from peak discharge Q = C · i · A.
 
     Configurable runoff coefficient presets:
       - low    (C = 0.15): Dense forest / permeable soil

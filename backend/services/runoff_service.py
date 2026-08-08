@@ -1,7 +1,7 @@
 """
 runoff_service.py
 =================
-Estimates surface runoff volume using the Rational Method:
+Estimates surface runoff volume using the Runoff Coefficient Method:
 
     V = P × A × C
 
@@ -10,6 +10,7 @@ Where:
     A = catchment area in m²
     C = runoff coefficient (dimensionless, 0–1)
 
+Note: This calculates total volume V = P × A × C, distinct from the classical Rational Method for peak discharge Q = C · i · A.
 This is a planning-level estimate suitable for pre-feasibility pond sizing.
 It is NOT a substitute for site-specific hydrological modelling.
 """
