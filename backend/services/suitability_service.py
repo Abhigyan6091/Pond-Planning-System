@@ -142,14 +142,32 @@ class SuitabilityService:
             acc_val   = int(flow_acc[r, c])
             suit_val  = float(suitability[r, c])
 
-            # Individual scores at this cell
+            # Individual scores and itemized points at this cell (summing to 100)
+            slp_sc  = float(slope_score[r, c])
+            dep_sc  = float(depression_score[r, c])
+            cat_sc  = float(catchment_score[r, c])
+            elv_sc  = float(elevation_score[r, c])
+            rn_sc   = float(rainfall_score_scalar)
+
+            slp_pts = round(slp_sc * 20.0, 1)
+            dep_pts = round(dep_sc * 20.0, 1)
+            cat_pts = round(cat_sc * 25.0, 1)
+            elv_pts = round(elv_sc * 15.0, 1)
+            rn_pts  = round(rn_sc * 20.0, 1)
+            tot_pts = round(slp_pts + dep_pts + cat_pts + elv_pts + rn_pts, 1)
+
             s_comp = SuitabilityScoreComponents(
-                slope_score      = round(float(slope_score[r, c]),      4),
-                depression_score = round(float(depression_score[r, c]), 4),
-                catchment_score  = round(float(catchment_score[r, c]),  4),
-                elevation_score  = round(float(elevation_score[r, c]),  4),
-                rainfall_score   = round(rainfall_score_scalar,         4),
-                composite_score  = round(suit_val * 100.0,              2),
+                slope_score      = round(slp_sc, 4),
+                depression_score = round(dep_sc, 4),
+                catchment_score  = round(cat_sc, 4),
+                elevation_score  = round(elv_sc, 4),
+                rainfall_score   = round(rn_sc, 4),
+                composite_score  = tot_pts,
+                slope_pts        = slp_pts,
+                depression_pts   = dep_pts,
+                catchment_pts    = cat_pts,
+                elevation_pts    = elv_pts,
+                rainfall_pts     = rn_pts,
             )
 
             # Catchment area estimate from flow accumulation

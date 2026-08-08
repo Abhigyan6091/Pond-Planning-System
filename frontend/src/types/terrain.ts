@@ -42,6 +42,8 @@ export interface DemMetadata {
   pixel_size_m: number;
   crs: string;
   data_source?: string;
+  is_synthetic?: boolean;
+  nodata_count?: number;
   num_api_points?: number;
 }
 
@@ -104,6 +106,13 @@ export interface WatershedData {
   avg_slope_deg: number;
 }
 
+export interface StageStoragePoint {
+  water_level_m: number;
+  depth_m: number;
+  surface_area_m2: number;
+  volume_m3: number;
+}
+
 export interface PondInfo {
   pond_id: string;
   center: LatLng;
@@ -115,6 +124,7 @@ export interface PondInfo {
   volume_m3: number;
   volume_km3: number;
   catchment_cells: number;
+  stage_storage_curve?: StageStoragePoint[];
 }
 
 export interface PondResponseData {
@@ -239,6 +249,11 @@ export interface SuitabilityScoreComponents {
   elevation_score: number;
   rainfall_score: number;
   composite_score: number;
+  slope_pts?: number;
+  depression_pts?: number;
+  catchment_pts?: number;
+  elevation_pts?: number;
+  rainfall_pts?: number;
 }
 
 export interface CandidateSite {

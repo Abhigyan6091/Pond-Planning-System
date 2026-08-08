@@ -148,7 +148,7 @@ $$S = 100 \times \sum_{i=1}^5 w_i S_i \quad \text{where } \sum w_i = 1.0$$
 - **GIS & Numerical Computing**: NumPy, SciPy, Rasterio, Shapely, PyProj, Scikit-Image, OpenCV, Pillow.
 - **Frontend Framework**: React 18, Vite, TypeScript, Tailwind CSS.
 - **Map & Visualization Engine**: Leaflet, React-Leaflet, Plotly.js, React-Plotly.js, Lucide-React.
-- **Testing**: PyTest (42 automated unit & integration tests).
+- **Testing**: PyTest (45 automated unit & integration tests). See [ASSIGNMENT_VALIDATION.md](file:///c:/Users/Abhigyan%20Sharma/OneDrive/Desktop/Contour/ASSIGNMENT_VALIDATION.md) for full requirement coverage matrix.
 
 ---
 

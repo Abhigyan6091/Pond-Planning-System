@@ -1,4 +1,5 @@
 import React from 'react';
+import Plot from 'react-plotly.js';
 import { PondInfo } from '../types/terrain';
 import { Database, Waves, X, Layers, Maximize2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 
@@ -80,6 +81,52 @@ export const PondInspector: React.FC<PondInspectorProps> = ({ pond, onClose }) =
           <span className="font-bold text-amber-300">{pond.bottom_elevation} m</span>
         </div>
       </div>
+      {pond.stage_storage_curve && pond.stage_storage_curve.length > 0 && (
+        <div className="bg-[#0a0d14]/90 border border-[#1f293d] p-2 rounded-lg">
+          <div className="text-[10px] font-mono text-slate-400 mb-1 flex items-center justify-between">
+            <span className="font-bold text-cyan-400">STAGE-STORAGE CURVE</span>
+            <span className="text-[9px] text-slate-500">V = ∫ A(z) dz</span>
+          </div>
+          <div className="w-full h-36">
+            <Plot
+              data={[
+                {
+                  x: pond.stage_storage_curve.map((p) => p.depth_m),
+                  y: pond.stage_storage_curve.map((p) => p.volume_m3),
+                  type: 'scatter',
+                  mode: 'lines+markers',
+                  fill: 'tozeroy',
+                  fillcolor: 'rgba(59, 130, 246, 0.15)',
+                  line: { color: '#3b82f6', width: 2 },
+                  marker: { color: '#60a5fa', size: 4 },
+                  name: 'Volume (m³)',
+                },
+              ]}
+              layout={{
+                autosize: true,
+                margin: { l: 40, r: 10, t: 10, b: 30 },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                xaxis: {
+                  title: { text: 'Depth (m)', font: { color: '#94a3b8', size: 9 } },
+                  tickfont: { color: '#64748b', size: 8 },
+                  gridcolor: '#1e293b',
+                  zerolinecolor: '#334155',
+                },
+                yaxis: {
+                  title: { text: 'Volume (m³)', font: { color: '#94a3b8', size: 9 } },
+                  tickfont: { color: '#64748b', size: 8 },
+                  gridcolor: '#1e293b',
+                  zerolinecolor: '#334155',
+                },
+                showlegend: false,
+              }}
+              config={{ responsive: true, displayModeBar: false }}
+              style={{ width: '100%', height: '100%' }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

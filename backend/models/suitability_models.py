@@ -23,6 +23,12 @@ class SuitabilityScoreComponents(BaseModel):
     elevation_score: float      # 0–1: 1 = lowest point in ROI
     rainfall_score: float       # 0–1: 1 = >800mm/yr
     composite_score: float      # 0–100: weighted sum
+    # Itemized score breakdown points (sums to total out of 100)
+    slope_pts: float = 0.0      # Out of 20
+    depression_pts: float = 0.0 # Out of 20
+    catchment_pts: float = 0.0  # Out of 25
+    elevation_pts: float = 0.0  # Out of 15
+    rainfall_pts: float = 0.0   # Out of 20
 
 
 class CandidateSite(BaseModel):

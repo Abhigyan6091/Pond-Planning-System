@@ -126,15 +126,34 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
 
           {/* Score breakdown */}
           <div>
-            <div className="flex items-center space-x-1 text-[10px] text-slate-400 uppercase tracking-wider mb-2">
-              <BarChart2 className="w-3 h-3" /><span>Score Breakdown</span>
+            <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider mb-2">
+              <div className="flex items-center space-x-1">
+                <BarChart2 className="w-3 h-3 text-amber-400" />
+                <span>Score Breakdown</span>
+              </div>
+              <span className="font-mono font-bold text-amber-300">Total: {score.toFixed(1)}/100</span>
             </div>
-            <div className="space-y-1.5">
-              <ScoreBar label="Slope" value={recommended.scores.slope_score} tooltip="Flatter terrain → higher score" />
-              <ScoreBar label="Depression" value={recommended.scores.depression_score} tooltip="Deeper natural sink → higher score" />
-              <ScoreBar label="Catchment" value={recommended.scores.catchment_score} tooltip="More upstream area → higher score" />
-              <ScoreBar label="Elevation" value={recommended.scores.elevation_score} tooltip="Lower within ROI → higher score" />
-              <ScoreBar label="Rainfall" value={recommended.scores.rainfall_score} tooltip="More rainfall → higher score" />
+            <div className="space-y-1 font-mono text-[10px]">
+              <div className="flex justify-between text-slate-300">
+                <span>Slope Suitability</span>
+                <span className="text-emerald-400 font-bold">{recommended.scores.slope_pts ?? (recommended.scores.slope_score * 20).toFixed(1)} / 20</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span>Depression Depth</span>
+                <span className="text-cyan-400 font-bold">{recommended.scores.depression_pts ?? (recommended.scores.depression_score * 20).toFixed(1)} / 20</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span>Catchment & Flow</span>
+                <span className="text-indigo-400 font-bold">{recommended.scores.catchment_pts ?? (recommended.scores.catchment_score * 25).toFixed(1)} / 25</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span>Terrain Elevation</span>
+                <span className="text-purple-400 font-bold">{recommended.scores.elevation_pts ?? (recommended.scores.elevation_score * 15).toFixed(1)} / 15</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span>Rainfall Volume</span>
+                <span className="text-blue-400 font-bold">{recommended.scores.rainfall_pts ?? (recommended.scores.rainfall_score * 20).toFixed(1)} / 20</span>
+              </div>
             </div>
           </div>
 
@@ -164,9 +183,10 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
             <span>Focus on Map</span>
           </button>
 
-          <p className="text-[9px] text-slate-500 leading-relaxed">
-            ⚠ Planning estimate only. Field survey required before construction.
-          </p>
+          <div className="text-[9px] text-slate-400 leading-relaxed bg-[#0a0d14]/60 p-2 rounded border border-[#1f293d] space-y-1">
+            <p>⚠️ <strong>Terrain Estimate Only:</strong> Pre-feasibility screening values requiring field verification.</p>
+            <p className="text-slate-500">📜 Official cadastral records required to verify legal land ownership and availability.</p>
+          </div>
         </div>
       )}
     </div>

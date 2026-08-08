@@ -10,6 +10,13 @@ class PondRequest(BaseModel):
     pixel_size_m: float
 
 
+class StageStoragePoint(BaseModel):
+    water_level_m: float
+    depth_m: float
+    surface_area_m2: float
+    volume_m3: float
+
+
 class PondInfo(BaseModel):
     pond_id: str
     center: LatLng
@@ -21,6 +28,7 @@ class PondInfo(BaseModel):
     volume_m3: float
     volume_km3: float
     catchment_cells: int
+    stage_storage_curve: List[StageStoragePoint] = []
 
 
 class PondResponse(BaseModel):

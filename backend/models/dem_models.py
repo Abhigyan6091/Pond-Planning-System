@@ -36,6 +36,8 @@ class DemMetadata(BaseModel):
     pixel_size_m: float
     crs: str = "EPSG:4326"
     data_source: str = "unknown"          # e.g. "OpenZenith GLO-30", "SRTM-30m"
+    is_synthetic: bool = False            # True only if all network sources failed and Perlin noise fallback was used
+    nodata_count: int = 0                 # Count of NaN/NoData cells filled
     zoom_level: Optional[int] = None      # tile zoom level used (if tile-based)
     num_api_points: Optional[int] = None  # how many elevation points fetched
 

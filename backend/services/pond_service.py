@@ -197,6 +197,23 @@ class PondService:
         center_lat = float(lats[center_r])
         center_lng = float(lons[center_c])
 
+        # Stage-Storage Curve calculation (discrete 10 water levels)
+        from backend.models.phase4_models import StageStoragePoint
+        stage_curve: List[StageStoragePoint] = []
+        num_steps = 10
+        levels = np.linspace(bottom_elev, water_level, num_steps)
+        for z in levels:
+            d_k = z - bottom_elev
+            submerged = cell_elevs < z
+            area_k = float(np.sum(submerged)) * pixel_area_m2 if np.any(submerged) else 0.0
+            vol_k = float(np.sum(np.maximum(0.0, z - cell_elevs[submerged]))) * pixel_area_m2 if np.any(submerged) else 0.0
+            stage_curve.append(StageStoragePoint(
+                water_level_m=round(float(z), 2),
+                depth_m=round(float(d_k), 2),
+                surface_area_m2=round(float(area_k), 1),
+                volume_m3=round(float(vol_k), 1),
+            ))
+
         pond = PondInfo(
             pond_id=f"pond_{uuid.uuid4().hex[:8]}",
             center=LatLng(lat=round(center_lat, 6), lng=round(center_lng, 6)),
@@ -208,6 +225,7 @@ class PondService:
             volume_m3=round(volume_m3, 1),
             volume_km3=round(volume_km3, 9),
             catchment_cells=int(len(pond_cells)),
+            stage_storage_curve=stage_curve,
         )
 
         return PondResponse(

@@ -39,7 +39,12 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ metadata }) => {
         <div className={`text-xs font-mono font-bold mt-1 ${sourceColor}`}>
           {sourceIcon} {metadata.data_source ?? 'Unknown'}
         </div>
-        <div className="text-[9px] font-mono text-slate-500 mt-0.5">
+        {!isRealData && (
+          <div className="mt-1.5 p-1.5 rounded bg-amber-950/60 border border-amber-500/50 text-[10px] text-amber-200 leading-tight">
+            ⚠️ <strong>SYNTHETIC TERRAIN:</strong> Network DEM APIs were unavailable. This elevation data is synthetic and not suitable for engineering analysis.
+          </div>
+        )}
+        <div className="text-[9px] font-mono text-slate-500 mt-1">
           Bounds: {metadata.bounds.south.toFixed(4)}°N, {metadata.bounds.west.toFixed(4)}°E
           → {metadata.bounds.north.toFixed(4)}°N, {metadata.bounds.east.toFixed(4)}°E
         </div>

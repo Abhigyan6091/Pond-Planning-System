@@ -138,6 +138,7 @@ class DemService:
         }
 
         bounds_model = BoundingBox(south=south, west=west, north=north, east=east)
+        is_synthetic = "Perlin" in source_label
         metadata = DemMetadata(
             dem_id=dem_id,
             bounds=bounds_model,
@@ -150,6 +151,8 @@ class DemService:
             median_elevation=round(median_elev, 2),
             pixel_size_m=round(pixel_size_m, 2),
             data_source=source_label,
+            is_synthetic=is_synthetic,
+            nodata_count=int(np.sum(np.isnan(valid_elev))),
             num_api_points=res * res,
         )
 
