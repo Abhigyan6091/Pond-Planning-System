@@ -3,7 +3,7 @@ import {
   LatLng, BoundingBox, ROISelectionMode, DemProvider, LayerVisibility,
   DemResponseData, ContourPolylineData, SlopeResponseData, DropletPath,
   WatershedData, MapInteractionMode, PondInfo, ElevationProfileResponseData, Terrain3DData,
-  FlowVectorsData, StreamNetworkData,
+  FlowVectorsData, StreamNetworkData, BasemapType, RainfallData, CandidateSite, SuitabilityResponse,
 } from '../types/terrain';
 import { TopToolbar } from '../components/TopToolbar';
 import { LeftSidebar } from '../components/LeftSidebar';
@@ -13,17 +13,22 @@ import { HydrologyInspector } from '../components/HydrologyInspector';
 import { PondInspector } from '../components/PondInspector';
 import { ElevationProfileModal } from '../components/ElevationProfileModal';
 import { Terrain3DModal } from '../components/Terrain3DModal';
+import { RainfallPanel } from '../components/RainfallPanel';
+import { CandidateSitesPanel } from '../components/CandidateSitesPanel';
+import { RecommendationPanel } from '../components/RecommendationPanel';
 import { TerrainMap } from '../map/TerrainMap';
 import { demService } from '../services/api';
 import { Download, Trash2, Hexagon } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   // --- ROI / DEM state ---
-  const [selectedPoint, setSelectedPoint] = useState<LatLng | null>({ lat: 27.9881, lng: 86.9250 });
+  const [selectedPoint, setSelectedPoint] = useState<LatLng | null>({ lat: 19.8762, lng: 75.3433 }); // Aurangabad, Maharashtra
+  const [villageName, setVillageName] = useState<string>('Aurangabad Region');
   const [radiusKm, setRadiusKm] = useState<number>(2.0);
   const [roiMode, setRoiMode] = useState<ROISelectionMode>('point');
   const [polygonPoints, setPolygonPoints] = useState<LatLng[]>([]);
   const [provider, setProvider] = useState<DemProvider>('openzenith');
+  const [basemap, setBasemap] = useState<BasemapType>('satellite');
   const [isLoading, setIsLoading] = useState(false);
   const [demData, setDemData] = useState<DemResponseData | null>(null);
 
@@ -46,9 +51,17 @@ export const Dashboard: React.FC = () => {
   const [data3D, setData3D] = useState<Terrain3DData | null>(null);
   const [is3DOpen, setIs3DOpen] = useState(false);
 
-  // --- New: Flow Vectors & Stream Network ---
+  // --- Flow Vectors & Stream Network ---
   const [flowVectors, setFlowVectors] = useState<FlowVectorsData | null>(null);
   const [streamNetwork, setStreamNetwork] = useState<StreamNetworkData | null>(null);
+
+  // --- Rainfall & Pond Suitability ---
+  const [rainfallData, setRainfallData] = useState<RainfallData | null>(null);
+  const [rainfallLoading, setRainfallLoading] = useState(false);
+  const [candidateSites, setCandidateSites] = useState<CandidateSite[]>([]);
+  const [recommendedSite, setRecommendedSite] = useState<CandidateSite | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateSite | null>(null);
+  const [suitabilityLoading, setSuitabilityLoading] = useState(false);
 
   const [analysisLoading, setAnalysisLoading] = useState(false);
 
@@ -58,8 +71,10 @@ export const Dashboard: React.FC = () => {
     hillshade: true,
     watershed: true,
     slopeHeatmap: false,
-    flowVectors: true,
+    flowVectors: false,
     streamNetwork: true,
+    candidateSites: true,
+    recommendedSite: true,
   });
 
   const computedBbox: BoundingBox | null = useMemo(() => {
@@ -128,6 +143,9 @@ export const Dashboard: React.FC = () => {
     setSlopeData(null);
     setFlowVectors(null);
     setStreamNetwork(null);
+    setCandidateSites([]);
+    setRecommendedSite(null);
+    setSelectedCandidate(null);
 
     try {
       const payload: any = { provider, dem_type: 'COP30', resolution: 100 };
@@ -141,19 +159,19 @@ export const Dashboard: React.FC = () => {
       const res = await demService.downloadDem(payload);
       setDemData(res);
 
-      // Auto-generate contours
+      // 1. Contours
       const cRes = await demService.generateContours(
         res.metadata.dem_id, res.elevation_matrix, res.metadata.bounds, contourInterval
       );
       setContours(cRes.contours);
 
-      // Auto-compute slope heatmap
+      // 2. Slope Heatmap
       const sRes = await demService.computeSlope(
         res.metadata.dem_id, res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m
       );
       setSlopeData(sRes);
 
-      // Auto-compute flow vectors and stream network in background (don't block UI)
+      // 3. Flow vectors & stream network (background)
       demService.fetchFlowVectors(
         res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 2
       ).then(setFlowVectors).catch(console.error);
@@ -162,9 +180,41 @@ export const Dashboard: React.FC = () => {
         res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 20
       ).then(setStreamNetwork).catch(console.error);
 
+      // 4. Fetch Rainfall from Open-Meteo
+      const latVal = selectedPoint ? selectedPoint.lat : res.metadata.bounds.south;
+      const lngVal = selectedPoint ? selectedPoint.lng : res.metadata.bounds.west;
+      setRainfallLoading(true);
+      let rfRes: RainfallData | null = null;
+      try {
+        rfRes = await demService.fetchRainfall(latVal, lngVal);
+        setRainfallData(rfRes);
+      } catch (rfErr) {
+        console.error('Rainfall fetch failed:', rfErr);
+      } finally {
+        setRainfallLoading(false);
+      }
+
+      // 5. Compute Candidate Pond Sites & Suitability Scoring
+      setSuitabilityLoading(true);
+      try {
+        const rfMm = rfRes && rfRes.annual_avg_mm ? rfRes.annual_avg_mm : undefined;
+        const suitRes = await demService.analyzeSuitability(
+          res.elevation_matrix, res.metadata.bounds, res.metadata.pixel_size_m, 10, rfMm
+        );
+        if (suitRes.success) {
+          setCandidateSites(suitRes.candidates);
+          setRecommendedSite(suitRes.recommended);
+          setSelectedCandidate(suitRes.recommended);
+        }
+      } catch (suitErr) {
+        console.error('Suitability analysis failed:', suitErr);
+      } finally {
+        setSuitabilityLoading(false);
+      }
+
     } catch (err) {
       console.error(err);
-      alert('Error fetching DEM. Check backend is running on port 8000.');
+      alert('Error fetching DEM or analyzing village. Make sure backend server is active.');
     } finally {
       setIsLoading(false);
     }
@@ -260,12 +310,40 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const handleGenerateReport = async () => {
+    if (!demData || !selectedPoint) return;
+    try {
+      const html = await demService.generateReport({
+        village_name: villageName,
+        lat: selectedPoint.lat,
+        lng: selectedPoint.lng,
+        roi_radius_km: radiusKm,
+        dem_stats: demData.metadata,
+        rainfall: rainfallData,
+        catchment: watershed,
+        recommended_site: recommendedSite,
+        candidates: candidateSites,
+        data_source: demData.metadata.data_source || 'OpenTopography COP30',
+      });
+
+      const reportWindow = window.open('', '_blank');
+      if (reportWindow) {
+        reportWindow.document.write(html);
+        reportWindow.document.close();
+      }
+    } catch (err) {
+      console.error('Report error:', err);
+      alert('Failed to generate report. Check console for details.');
+    }
+  };
+
   const showHydroInspector = !!(dropletPath || watershed);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#0a0d14]">
       <TopToolbar
         selectedPoint={selectedPoint}
+        villageName={villageName}
         radiusKm={radiusKm}
         onRadiusChange={setRadiusKm}
         roiMode={roiMode}
@@ -281,9 +359,16 @@ export const Dashboard: React.FC = () => {
         }}
         onOpen3DTerrain={handleOpen3DTerrain}
         onDownloadDem={handleDownloadDem}
-        isLoading={isLoading || analysisLoading}
-        onLocationFound={(loc) => { setSelectedPoint(loc); if (roiMode === 'polygon') setPolygonPoints([]); }}
+        isLoading={isLoading || analysisLoading || rainfallLoading || suitabilityLoading}
+        onLocationFound={(loc, name) => {
+          setSelectedPoint(loc);
+          if (name) setVillageName(name);
+          if (roiMode === 'polygon') setPolygonPoints([]);
+        }}
         demLoaded={!!demData}
+        basemap={basemap}
+        onBasemapChange={setBasemap}
+        onGenerateReport={handleGenerateReport}
       />
 
       <LeftSidebar
@@ -292,9 +377,40 @@ export const Dashboard: React.FC = () => {
         demLoaded={!!demData}
         demId={demData?.metadata.dem_id}
         contours={contours}
+        watershed={watershed}
       />
 
       <StatsPanel metadata={demData?.metadata || null} />
+
+      {/* Rainfall Panel */}
+      <RainfallPanel
+        rainfall={rainfallData}
+        isLoading={rainfallLoading}
+        onClose={() => setRainfallData(null)}
+      />
+
+      {/* Candidate Sites Panel */}
+      {demData && (
+        <CandidateSitesPanel
+          candidates={candidateSites}
+          selectedSite={selectedCandidate}
+          onSelectSite={(site) => {
+            setSelectedCandidate(site);
+            setSelectedPoint({ lat: site.lat, lng: site.lng });
+          }}
+          isLoading={suitabilityLoading}
+          onClose={() => setCandidateSites([])}
+        />
+      )}
+
+      {/* Recommendation Panel */}
+      {recommendedSite && layers.recommendedSite && (
+        <RecommendationPanel
+          recommended={recommendedSite}
+          onClose={() => setLayers(prev => ({ ...prev, recommendedSite: false }))}
+          onSelectOnMap={(site) => setSelectedPoint({ lat: site.lat, lng: site.lng })}
+        />
+      )}
 
       {/* Contour Inspector */}
       {selectedContour && !showHydroInspector && !pond && (
@@ -329,10 +445,14 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* Loading overlay */}
-      {analysisLoading && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[990] flex items-center space-x-2 bg-[#121824]/90 border border-[#1f293d] px-4 py-2 rounded-full text-xs text-slate-300 shadow-xl">
+      {(analysisLoading || suitabilityLoading || rainfallLoading) && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[990] flex items-center space-x-2 bg-[#121824]/90 border border-[#1f293d] px-4 py-2 rounded-full text-xs text-slate-300 shadow-xl font-mono">
           <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-          <span>Processing terrain analysis...</span>
+          <span>
+            {rainfallLoading ? 'Fetching rainfall from Open-Meteo...' :
+             suitabilityLoading ? 'Evaluating terrain suitability & candidate sites...' :
+             'Processing spatial analysis...'}
+          </span>
         </div>
       )}
 
@@ -390,6 +510,13 @@ export const Dashboard: React.FC = () => {
         layers={layers}
         flowVectors={flowVectors}
         streamNetwork={streamNetwork}
+        basemap={basemap}
+        candidateSites={candidateSites}
+        recommendedSite={recommendedSite}
+        onCandidateClick={(site) => {
+          setSelectedCandidate(site);
+          setSelectedPoint({ lat: site.lat, lng: site.lng });
+        }}
       />
     </div>
   );

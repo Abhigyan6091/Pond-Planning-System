@@ -17,6 +17,7 @@ export interface PolygonROI {
 export type ROISelectionMode = 'point' | 'rectangle' | 'polygon';
 export type MapInteractionMode = 'select' | 'droplet' | 'watershed' | 'pond' | 'profile';
 export type DemProvider = 'openzenith' | 'opentopography' | 'opentopodata' | 'auto';
+export type BasemapType = 'osm' | 'satellite' | 'terrain';
 
 export interface DemRequestPayload {
   center?: LatLng;
@@ -40,8 +41,8 @@ export interface DemMetadata {
   median_elevation: number;
   pixel_size_m: number;
   crs: string;
-  data_source?: string;       // e.g. "OpenZenith GLO-30", "SRTM-30m"
-  num_api_points?: number;    // how many elevation points were fetched
+  data_source?: string;
+  num_api_points?: number;
 }
 
 export interface DemResponseData {
@@ -96,7 +97,7 @@ export interface DropletPath {
 export interface WatershedData {
   success: boolean;
   outlet: LatLng;
-  catchment_polygon: number[][];   // [lng, lat]
+  catchment_polygon: number[][];
   catchment_area_km2: number;
   catchment_area_m2: number;
   perimeter_km: number;
@@ -157,12 +158,14 @@ export interface LayerVisibility {
   slopeHeatmap: boolean;
   flowVectors: boolean;
   streamNetwork: boolean;
+  candidateSites: boolean;
+  recommendedSite: boolean;
 }
 
 export interface FlowVector {
   lat: number;
   lng: number;
-  direction_idx: number;  // 0..7 → E, SE, S, SW, W, NW, N, NE
+  direction_idx: number;
   slope_deg: number;
 }
 
@@ -172,7 +175,7 @@ export interface FlowVectorsData {
 }
 
 export interface StreamSegment {
-  coordinates: number[][];  // [[lng, lat], ...]
+  coordinates: number[][];
   stream_order: number;
 }
 
@@ -181,3 +184,91 @@ export interface StreamNetworkData {
   segments: StreamSegment[];
 }
 
+// ── Rainfall ─────────────────────────────────────────────────────────
+export interface MonthlyRainfall {
+  month: number;
+  month_name: string;
+  avg_mm: number;
+  total_mm: number;
+}
+
+export interface RainfallTimeSeries {
+  year: number;
+  annual_total_mm: number;
+}
+
+export interface RainfallData {
+  success: boolean;
+  message: string;
+  lat: number;
+  lng: number;
+  start_year: number;
+  end_year: number;
+  annual_avg_mm: number;
+  annual_max_mm: number;
+  annual_min_mm: number;
+  monsoon_avg_mm: number;
+  monsoon_fraction: number;
+  monthly_avg: MonthlyRainfall[];
+  yearly_totals: RainfallTimeSeries[];
+  max_rainfall_year: number;
+  data_source: string;
+  rainfall_class: string;
+}
+
+// ── Runoff ────────────────────────────────────────────────────────────
+export interface RunoffData {
+  success: boolean;
+  rainfall_mm: number;
+  catchment_area_m2: number;
+  catchment_area_km2: number;
+  runoff_coefficient: number;
+  coefficient_label: string;
+  runoff_volume_m3: number;
+  runoff_volume_million_m3: number;
+  pond_fill_count: number;
+  methodology: string;
+  assumption_note: string;
+}
+
+// ── Suitability ───────────────────────────────────────────────────────
+export interface SuitabilityScoreComponents {
+  slope_score: number;
+  depression_score: number;
+  catchment_score: number;
+  elevation_score: number;
+  rainfall_score: number;
+  composite_score: number;
+}
+
+export interface CandidateSite {
+  rank: number;
+  site_id: string;
+  lat: number;
+  lng: number;
+  elevation_m: number;
+  slope_deg: number;
+  depression_depth_m: number;
+  flow_accumulation: number;
+  catchment_area_m2: number;
+  catchment_area_km2: number;
+  estimated_depth_m: number;
+  estimated_surface_area_m2: number;
+  estimated_volume_m3: number;
+  rainfall_mm: number | null;
+  runoff_coefficient: number;
+  estimated_runoff_m3: number | null;
+  scores: SuitabilityScoreComponents;
+  suitability_tier: string;
+  suitability_reasons: string[];
+}
+
+export interface SuitabilityResponse {
+  success: boolean;
+  message: string;
+  num_candidates: number;
+  candidates: CandidateSite[];
+  recommended: CandidateSite | null;
+  score_explanation: Record<string, string>;
+  methodology_note: string;
+}

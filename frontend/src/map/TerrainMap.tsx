@@ -1,14 +1,14 @@
 import React, { useEffect } from 'react';
 import {
   MapContainer, TileLayer, Marker, Rectangle, Polygon, Polyline,
-  ImageOverlay, useMap, useMapEvents
+  ImageOverlay, useMap, useMapEvents, Popup,
 } from 'react-leaflet';
 import * as L from 'leaflet';
 import {
   LatLng, BoundingBox, ROISelectionMode, LayerVisibility,
   DemResponseData, ContourPolylineData, DropletPath, WatershedData,
   MapInteractionMode, SlopeResponseData, PondInfo,
-  FlowVectorsData, StreamNetworkData,
+  FlowVectorsData, StreamNetworkData, BasemapType, CandidateSite,
 } from '../types/terrain';
 import { ContourLayer } from './ContourLayer';
 import { WaterDropletAnimation } from './WaterDropletAnimation';
@@ -16,43 +16,68 @@ import { WatershedLayer } from './WatershedLayer';
 import { FlowVectorLayer } from './FlowVectorLayer';
 import { StreamNetworkLayer } from './StreamNetworkLayer';
 
+// ── Icons ──────────────────────────────────────────────────────────
 const customIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
 });
 
 const createVertexIcon = (num: number) => new L.DivIcon({
   html: `<div style="width:20px;height:20px;background:#10b981;border-radius:50%;color:white;font-weight:bold;font-size:11px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 8px rgba(16,185,129,0.9);border:2px solid #ffffff">${num}</div>`,
-  className: '',
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
+  className: '', iconSize: [20, 20], iconAnchor: [10, 10],
 });
 
 const outletIcon = new L.DivIcon({
   html: `<div style="width:16px;height:16px;background:radial-gradient(circle,#818cf8,#4338ca);border-radius:50%;box-shadow:0 0 10px rgba(99,102,241,0.8);border:2px solid rgba(255,255,255,0.4)"></div>`,
-  className: '',
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
+  className: '', iconSize: [16, 16], iconAnchor: [8, 8],
 });
 
 const pondIcon = new L.DivIcon({
   html: `<div style="width:18px;height:18px;background:radial-gradient(circle,#3b82f6,#1d4ed8);border-radius:50%;box-shadow:0 0 12px rgba(59,130,246,0.9);border:2px solid #93c5fd"></div>`,
-  className: '',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
+  className: '', iconSize: [18, 18], iconAnchor: [9, 9],
 });
 
 const profilePointIcon = new L.DivIcon({
   html: `<div style="width:14px;height:14px;background:#10b981;border-radius:50%;box-shadow:0 0 8px rgba(16,185,129,0.8);border:2px solid #ffffff"></div>`,
-  className: '',
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
+  className: '', iconSize: [14, 14], iconAnchor: [7, 7],
 });
 
+const TIER_COLORS: Record<string, string> = {
+  'Recommended':      '#f59e0b',
+  'Highly Suitable':  '#10b981',
+  'Moderately Suitable': '#3b82f6',
+  'Poor':             '#6b7280',
+};
+
+const createCandidateIcon = (tier: string, rank: number, isRecommended: boolean) => {
+  const color = TIER_COLORS[tier] || '#6b7280';
+  const size = isRecommended ? 28 : 22;
+  const glow = isRecommended ? `box-shadow:0 0 16px ${color},0 0 4px #fff;` : `box-shadow:0 0 8px ${color}80;`;
+  return new L.DivIcon({
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;color:white;font-weight:bold;font-size:${isRecommended ? 13 : 11}px;display:flex;align-items:center;justify-content:center;${glow}border:2px solid white;z-index:${isRecommended ? 999 : 1}">${isRecommended ? '★' : rank}</div>`,
+    className: '', iconSize: [size, size], iconAnchor: [size/2, size/2],
+  });
+};
+
+// ── Basemap tile configs ───────────────────────────────────────────
+const BASEMAPS = {
+  osm: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a> | &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  },
+  satellite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; <a href="https://esri.com">Esri</a>, Maxar, Earthstar Geographics',
+  },
+  terrain: {
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> | &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  },
+};
+
+// ── Event handlers ─────────────────────────────────────────────────
 interface MapEventsHandlerProps {
   roiMode: ROISelectionMode;
   interactionMode: MapInteractionMode;
@@ -68,7 +93,7 @@ const MapEventsHandler: React.FC<MapEventsHandlerProps> = ({
   useMapEvents({
     click(e) {
       const pt = { lat: e.latlng.lat, lng: e.latlng.lng };
-      if (demLoaded && (interactionMode !== 'select')) {
+      if (demLoaded && interactionMode !== 'select') {
         onAnalysisClick(pt);
       } else if (roiMode === 'polygon') {
         onPolygonPointAdd(pt);
@@ -88,6 +113,7 @@ const MapRecenter: React.FC<{ center: LatLng | null }> = ({ center }) => {
   return null;
 };
 
+// ── Props ─────────────────────────────────────────────────────────
 interface TerrainMapProps {
   selectedPoint: LatLng | null;
   onPointSelect: (pt: LatLng) => void;
@@ -110,6 +136,10 @@ interface TerrainMapProps {
   layers: LayerVisibility;
   flowVectors: FlowVectorsData | null;
   streamNetwork: StreamNetworkData | null;
+  basemap: BasemapType;
+  candidateSites: CandidateSite[];
+  recommendedSite: CandidateSite | null;
+  onCandidateClick?: (site: CandidateSite) => void;
 }
 
 export const TerrainMap: React.FC<TerrainMapProps> = ({
@@ -117,33 +147,30 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
   onPolygonPointAdd, demData, contours, selectedContour, onSelectContour,
   slopeData, dropletPath, watershed, pond, profileTransect,
   interactionMode, onAnalysisClick, watershedOutlet, layers,
-  flowVectors, streamNetwork,
+  flowVectors, streamNetwork, basemap, candidateSites, recommendedSite,
+  onCandidateClick,
 }) => {
-  const initialCenter: [number, number] = [27.9881, 86.9250];
+  const initialCenter: [number, number] = [20.5937, 78.9629]; // Centre of India
 
-  // Cursor style based on mode
   const cursorClass = (interactionMode === 'droplet' || interactionMode === 'pond')
     ? 'cursor-crosshair'
     : (interactionMode === 'watershed' || interactionMode === 'profile' || roiMode === 'polygon')
     ? 'cursor-cell'
     : 'cursor-default';
 
+  const bm = BASEMAPS[basemap] || BASEMAPS.osm;
+
   return (
     <div className={`w-full h-screen relative ${cursorClass}`}>
-      <MapContainer center={initialCenter} zoom={12} zoomControl={false} className="w-full h-full">
-        <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a> | OpenZenith'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
-        />
+      <MapContainer center={initialCenter} zoom={5} zoomControl={false} className="w-full h-full">
+
+        {/* Basemap tile layer */}
+        <TileLayer key={basemap} attribution={bm.attribution} url={bm.url} maxZoom={19} />
 
         <MapEventsHandler
-          roiMode={roiMode}
-          interactionMode={interactionMode}
-          demLoaded={!!demData}
-          onPointSelect={onPointSelect}
-          onPolygonPointAdd={onPolygonPointAdd}
-          onAnalysisClick={onAnalysisClick}
+          roiMode={roiMode} interactionMode={interactionMode}
+          demLoaded={!!demData} onPointSelect={onPointSelect}
+          onPolygonPointAdd={onPolygonPointAdd} onAnalysisClick={onAnalysisClick}
         />
         <MapRecenter center={selectedPoint} />
 
@@ -152,11 +179,11 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           <Marker position={[selectedPoint.lat, selectedPoint.lng]} icon={customIcon} />
         )}
 
-        {/* Preset bounding box for point / rectangle mode */}
+        {/* Bounding box */}
         {computedBbox && (roiMode === 'point' || roiMode === 'rectangle') && (
           <Rectangle
             bounds={[[computedBbox.south, computedBbox.west], [computedBbox.north, computedBbox.east]]}
-            pathOptions={{ color: '#3b82f6', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.12, dashArray: '6,6' }}
+            pathOptions={{ color: '#3b82f6', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.10, dashArray: '6,6' }}
           />
         )}
 
@@ -165,7 +192,7 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           <>
             <Polygon
               positions={polygonPoints.map((p) => [p.lat, p.lng])}
-              pathOptions={{ color: '#10b981', weight: 2.5, fillColor: '#10b981', fillOpacity: 0.22 }}
+              pathOptions={{ color: '#10b981', weight: 2.5, fillColor: '#10b981', fillOpacity: 0.18 }}
             />
             {polygonPoints.map((pt, idx) => (
               <Marker key={idx} position={[pt.lat, pt.lng]} icon={createVertexIcon(idx + 1)} />
@@ -178,16 +205,16 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           <ImageOverlay
             url={demData.elevation_overlay_url}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
-            opacity={0.72}
+            opacity={basemap === 'satellite' ? 0.55 : 0.72}
           />
         )}
 
-        {/* Hillshade — rendered on top of elevation, blends via RGBA alpha channel */}
+        {/* Hillshade */}
         {demData && layers.hillshade && (
           <ImageOverlay
             url={demData.hillshade_overlay_url}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
-            opacity={0.85}
+            opacity={0.75}
           />
         )}
 
@@ -196,11 +223,11 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           <ImageOverlay
             url={slopeData.slope_heatmap_url}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
-            opacity={0.72}
+            opacity={0.68}
           />
         )}
 
-        {/* Stream Network — below contours so contours appear on top */}
+        {/* Stream Network */}
         {streamNetwork && layers.streamNetwork && (
           <StreamNetworkLayer streamNetwork={streamNetwork} />
         )}
@@ -208,8 +235,7 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
         {/* Contour Lines */}
         {layers.contours && demData && contours.length > 0 && (
           <ContourLayer
-            contours={contours}
-            selectedContour={selectedContour}
+            contours={contours} selectedContour={selectedContour}
             onSelectContour={onSelectContour}
             minElev={demData.metadata.min_elevation}
             maxElev={demData.metadata.max_elevation}
@@ -253,12 +279,62 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
             ))}
           </>
         )}
+
+        {/* Candidate Pond Sites */}
+        {layers.candidateSites && candidateSites.map((site) => {
+          const isRec = recommendedSite?.site_id === site.site_id;
+          if (isRec && !layers.recommendedSite) return null;
+          if (!isRec) return (
+            <Marker
+              key={site.site_id}
+              position={[site.lat, site.lng]}
+              icon={createCandidateIcon(site.suitability_tier, site.rank, false)}
+              eventHandlers={{ click: () => onCandidateClick?.(site) }}
+            >
+              <Popup>
+                <div style={{ fontFamily: 'monospace', fontSize: '12px', minWidth: '200px' }}>
+                  <strong>#{site.rank} — {site.suitability_tier}</strong><br />
+                  Score: <strong>{site.scores.composite_score.toFixed(1)}/100</strong><br />
+                  Elevation: {site.elevation_m} m | Slope: {site.slope_deg}°<br />
+                  Catchment: {site.catchment_area_km2.toFixed(3)} km²<br />
+                  Est. Depth: {site.estimated_depth_m} m<br />
+                  Est. Volume: {site.estimated_volume_m3.toLocaleString()} m³
+                </div>
+              </Popup>
+            </Marker>
+          );
+          return null;
+        })}
+
+        {/* Recommended Site — separate so it's always on top */}
+        {layers.recommendedSite && recommendedSite && (
+          <Marker
+            key={recommendedSite.site_id + '_rec'}
+            position={[recommendedSite.lat, recommendedSite.lng]}
+            icon={createCandidateIcon('Recommended', 1, true)}
+            eventHandlers={{ click: () => onCandidateClick?.(recommendedSite) }}
+          >
+            <Popup>
+              <div style={{ fontFamily: 'monospace', fontSize: '12px', minWidth: '220px' }}>
+                <strong>⭐ RECOMMENDED SITE</strong><br />
+                Score: <strong>{recommendedSite.scores.composite_score.toFixed(1)}/100</strong><br />
+                Lat: {recommendedSite.lat.toFixed(5)}°, Lng: {recommendedSite.lng.toFixed(5)}°<br />
+                Elevation: {recommendedSite.elevation_m} m | Slope: {recommendedSite.slope_deg}°<br />
+                Catchment: {recommendedSite.catchment_area_km2.toFixed(3)} km²<br />
+                Est. Depth: {recommendedSite.estimated_depth_m} m<br />
+                Est. Volume: {recommendedSite.estimated_volume_m3.toLocaleString()} m³<br />
+                {recommendedSite.estimated_runoff_m3 && <>Est. Runoff: {recommendedSite.estimated_runoff_m3.toLocaleString()} m³</>}
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
       </MapContainer>
 
-      {/* Overlay tooltips for interaction modes */}
+      {/* Mode tooltip overlays */}
       {roiMode === 'polygon' && interactionMode === 'select' && (
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[900] bg-emerald-950/90 backdrop-blur-sm border border-emerald-500/50 text-emerald-200 text-xs px-4 py-2 rounded-full font-mono shadow-lg flex items-center space-x-2">
-          <span>🛑 Click on map to add polygon vertices ({polygonPoints.length} points). Click 'Fetch DEM' when ready.</span>
+          <span>🛑 Click on map to add polygon vertices ({polygonPoints.length} points). Click 'Analyze Village' when ready.</span>
         </div>
       )}
       {interactionMode === 'droplet' && (
