@@ -43,27 +43,39 @@
 ## 🏗️ System Architecture
 
 ```mermaid
-graph TD
-    Client[React + Vite Frontend Dashboard] --> API[FastAPI Backend Router]
+flowchart TD
+    Client["React + Vite Frontend Dashboard"]
+    API["FastAPI Backend Router"]
 
-    subgraph GIS & Terrain Engine
-        API --> DEM[DemService - OpenTopography / OpenZenith / OpenTopoData]
-        API --> Contour[ContourService - Marching Squares & Local Planar Area]
-        API --> Hydro[HydrologyService - D8 Flow Dir & Accumulation]
-        API --> Pond[PondService - Priority-Flood Sink Filling]
-        API --> Terrain[TerrainService - Slope & Aspect Finite Gradient]
+    subgraph GIS_Engine["GIS & Terrain Engine"]
+        direction TB
+        DEM["DemService (OpenTopography / OpenZenith / GLO-30)"]
+        Contour["ContourService (Marching Squares & Planar Area)"]
+        Hydro["HydrologyService (D8 Flow Direction & Accumulation)"]
+        Pond["PondService (Priority-Flood Sink Filling)"]
+        Terrain["TerrainService (Slope & Aspect Finite Gradient)"]
     end
 
-    subgraph Hydrology & Planning Engine
-        API --> Rain[RainfallService - Open-Meteo Archive API]
-        API --> Runoff[RunoffService - Rational Method V = P × A × C]
-        API --> Suit[SuitabilityService - Composite Land Scoring]
-        API --> Report[ReportService - Printable HTML Report Generator]
-        API --> Export[ExportService - GeoJSON & CSV Exporters]
+    subgraph Planning_Engine["Hydrology & Planning Engine"]
+        direction TB
+        Rain["RainfallService (Open-Meteo Archive API)"]
+        Runoff["RunoffService (Rational Method V = P × A × C)"]
+        Suit["SuitabilityService (Composite Land Scoring)"]
+        Report["ReportService (Printable HTML Generator)"]
+        Export["ExportService (GeoJSON & CSV Exporters)"]
     end
 
-    Rain --> ExternalRain[Open-Meteo API]
-    DEM --> ExternalDEM[OpenTopography / OpenZenith / Copernicus GLO-30]
+    subgraph External_Services["External Data Sources"]
+        direction TB
+        ExtRain["Open-Meteo Weather Archive API"]
+        ExtDEM["OpenTopography / Copernicus GLO-30"]
+    end
+
+    Client --> API
+    API --> GIS_Engine
+    API --> Planning_Engine
+    GIS_Engine --> ExtDEM
+    Planning_Engine --> ExtRain
 ```
 
 ---
@@ -104,7 +116,7 @@ Flow accumulation ($A_{\text{cell}}$) is computed recursively or iteratively, co
 ### 5. Depression Sink Filling (Priority-Flood)
 Depression sinks are identified using the Priority-Flood algorithm (Wang & Liu 2006). For each cell in a labeled depression:
 
-$$V_{\text{total}} = \sum_{(r,c) \in \text{Depression}} \max(0, E_{\text{water_level}} - E_{r,c}) \times A_{\text{pixel}}$$
+$$V_{\text{total}} = \sum_{(r,c) \in \text{Depression}} \max(0, E_{\text{water level}} - E_{r,c}) \times A_{\text{pixel}}$$
 
 ### 6. Surface Runoff Estimation (Rational Method)
 Annual surface runoff volume ($V$) is estimated using:
@@ -119,8 +131,8 @@ Where:
 ### 7. Land Suitability Scoring Model
 Each DEM grid cell is evaluated across 5 normalized score components ($S_i \in [0, 1]$):
 1. **Slope Score** ($S_{\text{slope}} = \frac{1}{1 + \text{slope} / 8.0}$)
-2. **Depression Score** ($S_{\text{dep}} = \frac{\text{fill\_depth}}{\max \text{fill\_depth}}$)
-3. **Catchment Score** ($S_{\text{cat}} = \frac{\ln(1 + A_{\text{cell}})}{\max \ln(1 + A_{\text{cell}})}$)
+2. **Depression Score** ($S_{\text{dep}} = \frac{\text{fill depth}}{\max(\text{fill depth})}$)
+3. **Catchment Score** ($S_{\text{cat}} = \frac{\ln(1 + A_{\text{cell}})}{\max(\ln(1 + A_{\text{cell}}))}$)
 4. **Elevation Score** ($S_{\text{elev}} = 1 - \frac{E - E_{\min}}{E_{\max} - E_{\min}}$)
 5. **Rainfall Score** ($S_{\text{rain}} = \min(1, \text{Rainfall}_{\text{mm}} / 800)$)
 
