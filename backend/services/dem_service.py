@@ -60,6 +60,37 @@ RATE_DELAY = 0.25         # Seconds between OpenTopoData batch calls
 class DemService:
 
     # ─────────────────────────────────────────────────────
+    # DEM CACHE  (session-scoped, in-process)
+    # Key  = "<s4>_<w4>_<n4>_<e4>_<res>_<provider_sig>"
+    # Value = (elev_matrix: np.ndarray, source_label: str)
+    # ─────────────────────────────────────────────────────
+    _dem_cache: Dict[str, Tuple[np.ndarray, str]] = {}
+
+    @classmethod
+    def _dem_cache_key(
+        cls, south: float, west: float, north: float, east: float, res: int
+    ) -> str:
+        """
+        Build an explicit, collision-free cache key.
+
+        Bounds are rounded to 4 decimal places (~11 m precision) — enough to
+        treat two requests for the same village as identical while keeping
+        different geographic areas distinct.
+
+        The provider signature records whether an OpenTopography API key is
+        configured so that a key-present run and a key-absent run are never
+        mixed in the cache.
+        """
+        has_key = "1" if settings.OPENTOPOGRAPHY_API_KEY else "0"
+        return (
+            f"{round(south, 4)}_"
+            f"{round(west,  4)}_"
+            f"{round(north, 4)}_"
+            f"{round(east,  4)}_"
+            f"{res}_k{has_key}"
+        )
+
+    # ─────────────────────────────────────────────────────
     # PUBLIC ENTRY POINT
     # ─────────────────────────────────────────────────────
     @classmethod
@@ -82,12 +113,19 @@ class DemService:
 
         res = max(20, min(int(request.resolution), MAX_GRID_RES))
 
-        # 2. Fetch REAL elevation matrix
-        elev_matrix, source_label = cls._fetch_real_dem(south, west, north, east, res)
-        print(f"[DemService] Source: {source_label} | "
-              f"shape={elev_matrix.shape} | "
-              f"range=[{elev_matrix.min():.1f}, {elev_matrix.max():.1f}]m | "
-              f"std={elev_matrix.std():.1f}")
+        # 2. Fetch REAL elevation matrix (cache-first)
+        cache_key = cls._dem_cache_key(south, west, north, east, res)
+        if cache_key in cls._dem_cache:
+            elev_matrix, source_label = cls._dem_cache[cache_key]
+            elev_matrix = elev_matrix.copy()   # defensive copy – callers may mutate
+            print(f"[DemService] Cache HIT ({cache_key}) | Source: {source_label}")
+        else:
+            elev_matrix, source_label = cls._fetch_real_dem(south, west, north, east, res)
+            cls._dem_cache[cache_key] = (elev_matrix.copy(), source_label)
+            print(f"[DemService] Cache MISS – fetched via {source_label} | "
+                  f"shape={elev_matrix.shape} | "
+                  f"range=[{elev_matrix.min():.1f}, {elev_matrix.max():.1f}]m | "
+                  f"std={elev_matrix.std():.1f}")
 
         # 3. Apply Polygon Mask (supports any number of vertices ≥ 3)
         if request.polygon and len(request.polygon.coordinates) >= 3:

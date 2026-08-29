@@ -573,18 +573,19 @@ The numbers associated with `contours_1m.kml` (1,355 lines, 267–298 m elevatio
 ## 15. Testing and Validation
 
 ### Automated Test Suite
-The codebase is validated using a comprehensive `pytest` test suite comprising **89 automated unit and integration tests**:
+The codebase is validated using a comprehensive `pytest` test suite comprising **94 automated unit and integration tests**:
 
 ```
-============================= 89 passed in 4.30s ==============================
+============================= 94 passed in 4.50s ==============================
 - Phase 1 Core Hydrology & Planning Tests: 59 PASSED
 - Phase 2 Contour Ingestion & Terrain Tests: 30 PASSED
-Total Pass Rate: 100% (89 / 89)
+- Deterministic Caching & Channel Mask Tests: 5 PASSED
+Total Pass Rate: 100% (94 / 94)
 ```
 
 ```
 [FIGURE 5 — Test suite showing all tests passing]
-*Figure 5: Terminal output showing all 89 unit and integration tests passing in pytest.*
+*Figure 5: Terminal output showing all 94 unit and integration tests passing in pytest.*
 ```
 
 ### Phase 2 Test Coverage Breakdown
@@ -598,18 +599,22 @@ Total Pass Rate: 100% (89 / 89)
 | **Validation Gates** | `TestMalformedKml` (3 tests), `TestInsufficientContourData` (3 tests) | Verifies error handling for corrupt XML, single-level data, $<3$ contours, and invalid extensions | PASSED |
 | **Terrain Reconstruction** | `TestTerrainReconstructionService` (5 tests) | Validates grid shapes, bounding box coverage, positive pixel size, and zero-NaN output | PASSED |
 | **Sample End-to-End** | `TestSampleKmlEndToEnd` (6 tests) | Verifies end-to-end processing of `contours_1m.kml`, elevation range (267–298m), and hydrology reuse | PASSED |
+| **Determinism & Reproducibility** | `TestDemDeterminismAndCaching`, `TestSuitabilityDeterminismAcross5Runs` | Validates in-process DEM caching and 5-run identical ranking reproducibility | PASSED |
+| **Hydrological Channel Handling** | `TestHydrologicalChannelHandling` (2 tests) | Verifies active throughflow stream exclusion while retaining closed depression basins | PASSED |
 | **Production Build** | `npm run build` (Vite + TypeScript) | Validates frontend type safety and asset compilation with zero errors | PASSED |
 
 ---
 
-## 16. Limitations
+## 16. Limitations & Scientific Disclaimers
 
-While Phase 2 delivers a robust and automated workflow, the following technical and domain limitations apply:
+While Phase 2 delivers a robust and automated workflow, the following technical and domain considerations apply:
 
-1. **Interpolation Approximation**: Continuous terrain reconstructed from discrete contour lines is an approximation of the true physical topography. Surface features located entirely between adjacent contour isolines (e.g., small micro-depressions or narrow drainage ditches smaller than the contour interval) cannot be reconstructed.
-2. **Contour Density Dependency**: Reconstruction accuracy is directly proportional to contour density and interval. A 1m survey provides high fidelity, whereas coarse 50m contours will produce smoother, lower-resolution terrain models.
-3. **Flat Terrain Hydrology**: In near-flat terrain ($<0.5^\circ$ slope), standard D8 flow direction can become sensitive to interpolation smoothing, occasionally creating parallel flow paths.
-4. **Planning-Level Estimates**: All pond site recommendations and catchment volumes represent planning-level pre-feasibility screening and require on-site geotechnical and topographic verification prior to civil engineering construction.
+1. **Pre-Feasibility Decision Support**: All pond-site recommendations are terrain-based pre-feasibility results derived from the available DEM/contour data. Final engineering suitability requires field survey, soil/geotechnical investigation, drainage verification, and applicable land/water-body records.
+2. **DEM-Derived Channel Exclusion**: The system excludes cells satisfying the implemented DEM-derived through-flow criteria (`flow_accumulation` in top 5% quantile and `depression_depth < 0.30 m`). This represents algorithmic screening of drainage pathways and should not be interpreted as complete ground-truth detection of all real-world water bodies.
+3. **Threshold Classification**: `CHANNEL_DEP_THRESHOLD = 0.30 m` is a configurable, dataset-dependent screening threshold used in this project to distinguish shallow through-flow terrain from meaningful local storage depressions. It is an algorithmic heuristic and should not be interpreted as a universal civil-engineering design standard or a universal DEM accuracy threshold.
+4. **Candidate Validity Scope**: All identified candidates satisfy the implemented DEM-derived storage/depression and catchment criteria. The classification is based on the reconstructed DEM and hydrological model and does not constitute field verification of physical site conditions.
+5. **In-Process DEM Caching Scope**: The DEM cache operates in-memory for the duration of the active backend server process, guaranteeing deterministic repeat queries during a session. The in-memory cache resets upon backend server restarts.
+6. **Interpolation Approximation**: Continuous terrain reconstructed from discrete contour lines is an approximation of the physical surface. Micro-topographic features located entirely between adjacent contour isolines smaller than the contour interval cannot be reconstructed.
 
 ---
 
@@ -624,5 +629,6 @@ Key achievements include:
 - **Strict Geometry Isolation**: Correctly extracts 1,355 contour `LineString` features while ignoring spot points and boundary polygons.
 - **Dynamic Terrain & Catchment Modeling**: Reconstructs a high-precision continuous DEM, detects natural sinks, ranks pond suitability, and estimates contributing catchment area ($131,505.6\text{ m}^2$) via D8 reverse BFS traversal.
 - **Zero Hardcoding**: Every output parameter is derived dynamically from the uploaded geometry.
+- **Deterministic Multi-Tier Sorting**: Ensures deterministic ordering for identical input data and analysis configuration via a 7-field composite lexicographic sort key.
 - **High Code Reusability**: Directly reuses Phase 1 hydrological and suitability services via the Input Adapter Pattern, ensuring maximum extensibility for future engineering phases.
-- **Thoroughly Tested**: 100% test pass rate across all 89 unit and integration tests.
+- **Thoroughly Tested**: 100% test pass rate across all 94 unit and integration tests.

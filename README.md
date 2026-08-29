@@ -183,7 +183,7 @@ Itemized Points Breakdown out of 100:
 - **GIS & Numerical Computing**: NumPy, SciPy, Rasterio, Shapely, PyProj, Scikit-Image, OpenCV, Pillow.
 - **Frontend Framework**: React 18, Vite, TypeScript, Tailwind CSS.
 - **Map & Visualization Engine**: Leaflet, React-Leaflet, Plotly.js, React-Plotly.js, Lucide-React.
-- **Testing**: PyTest (**89 automated unit & integration tests**: 59 Phase 1 + 30 Phase 2). See [ASSIGNMENT_VALIDATION.md](file:///c:/Users/Abhigyan%20Sharma/OneDrive/Desktop/Contour/ASSIGNMENT_VALIDATION.md) and [PHASE_2.md](file:///c:/Users/Abhigyan%20Sharma/OneDrive/Desktop/Contour/PHASE_2.md).
+- **Testing**: PyTest (**94 automated unit & integration tests**: 59 Phase 1 + 30 Phase 2 + 5 Determinism & Hydrology). See [ASSIGNMENT_VALIDATION.md](file:///c:/Users/Abhigyan%20Sharma/OneDrive/Desktop/Contour/ASSIGNMENT_VALIDATION.md) and [PHASE_2.md](file:///c:/Users/Abhigyan%20Sharma/OneDrive/Desktop/Contour/PHASE_2.md).
 
 ---
 

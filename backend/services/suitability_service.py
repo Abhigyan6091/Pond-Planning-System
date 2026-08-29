@@ -10,15 +10,27 @@ ALGORITHM OVERVIEW
 2. Compute D8 flow direction (HydrologyService)
 3. Compute flow accumulation (HydrologyService)
 4. Fill DEM using Priority-Flood (PondService helper) → depression depth
-5. For each cell compute 5 normalized scores:
+5. Build CHANNEL EXCLUSION MASK
+   A cell is classified as an active drainage channel (not a storage site) when
+   ALL of the following hold simultaneously:
+     a) flow_accumulation >= CHANNEL_ACC_THRESHOLD  (large upstream area)
+     b) depression_depth  <  CHANNEL_DEP_THRESHOLD  (no closed basin above it)
+     c) the cell has a valid D8 pointer (i.e., water FLOWS THROUGH, not TO)
+   Such cells are zeroed in the suitability map before candidate selection.
+6. For each non-channel cell compute 5 normalized scores:
      slope_score      = 1 / (1 + slope_deg/SLOPE_REF)   normalised to [0,1]
      depression_score = fill_depth / max_fill_depth      normalised to [0,1]
      catchment_score  = log(1 + acc) / max_log_acc       normalised to [0,1]
      elevation_score  = 1 - (elev - min_e)/(max_e - min_e)
      rainfall_score   = min(1, rainfall_mm / RAIN_REF)   (scalar, same for all)
-6. Weighted composite → suitability_map
-7. Select top-N candidates with minimum spatial separation (grid_radius)
-8. For each candidate, estimate:
+7. Weighted composite → suitability_map
+8. Select top-N candidates with minimum spatial separation (grid_radius)
+   using a DETERMINISTIC composite sort key:
+     primary:   suitability DESC
+     secondary: flow_accumulation DESC  (more catchment → better)
+     tertiary:  depression_depth DESC   (deeper storage → better)
+     then:      elevation ASC, row ASC, column ASC
+9. For each candidate, estimate:
      catchment_area_m2 ≈ flow_acc × pixel_size_m²
      pond depth        ≈ depression_depth at candidate cell (or local basin min)
      pond volume       ≈ sum((water_level - elev) × px_area) over local basin
@@ -30,6 +42,20 @@ depression:  0.30
 catchment:   0.25
 elevation:   0.05
 rainfall:    0.10
+
+NOTE ON RAINFALL SCORE
+----------------------
+rainfall_score is a spatially UNIFORM scalar (same value for every grid cell).
+It therefore adds an identical constant to every candidate’s composite score,
+preserving the ranking order.  Changing rainfall_mm between runs does NOT
+cause ranking non-determinism.
+
+NOTE ON CHANNEL EXCLUSION
+--------------------------
+The exclusion mask is derived purely from the DEM-computed stream network.
+No real-world river geometry or external water-body layer is used.
+This is documented as a limitation: the mask suppresses DEM-inferred
+throughflow channels but cannot detect all real-world water bodies.
 """
 import math
 import uuid
@@ -47,6 +73,17 @@ from backend.services.hydrology_service import HydrologyService
 # Reference constants
 SLOPE_REF  = 8.0    # degrees — slope above this starts scoring poorly
 RAIN_REF   = 800.0  # mm/yr  — rainfall above this scores maximum
+
+# Channel exclusion thresholds
+# A cell is treated as an active drainage channel (not a pond site) only when
+# BOTH criteria apply simultaneously:
+#   1. Its upstream contributing area exceeds CHANNEL_ACC_FRAC * (rows * cols)
+#      This is a fractional threshold so it scales with grid size instead of
+#      hard-coding a number of cells.
+#   2. Its depression depth is below CHANNEL_DEP_THRESHOLD metres
+#      (i.e. the fill algorithm cannot form a closed basin above it)
+CHANNEL_ACC_FRAC      = 0.05   # top 5% of flow-accumulation values
+CHANNEL_DEP_THRESHOLD = 0.30   # metres — must have at least 30 cm closed depression to NOT be a channel
 
 
 class SuitabilityService:
@@ -70,10 +107,24 @@ class SuitabilityService:
         flow_acc = HydrologyService.compute_flow_accumulation(flow_dir)
 
         # ── 3. Depression depth (Priority-Flood fill) ─────────────────
-        filled         = cls._priority_flood_fill(dem)
+        filled           = cls._priority_flood_fill(dem)
         depression_depth = np.maximum(0.0, filled - dem)
 
-        # ── 4. Score components ───────────────────────────────────────
+        # ── 4. Channel exclusion mask (Storage vs. Through-Flow) ──────
+        # A cell is classified as an active throughflow channel (not a pond site) when:
+        #   (a) Upstream flow accumulation is high (top 5% of accumulation values), AND
+        #   (b) Depression depth is minimal (< 0.30 m, indicating no closed storage basin), AND
+        #   (c) The cell has a valid D8 outflow pointer (continuous drainage pathway).
+        # Legitimate side depressions and natural basins with large catchment areas are retained.
+        # Note: Derived from DEM hydrology; does not access external vector hydrography.
+        acc_threshold    = int(np.percentile(flow_acc, (1.0 - CHANNEL_ACC_FRAC) * 100))
+        acc_threshold    = max(acc_threshold, 5)
+        has_high_acc     = flow_acc >= acc_threshold
+        lacks_depression = depression_depth < CHANNEL_DEP_THRESHOLD
+        has_outflow      = flow_dir != -1
+        channel_mask     = has_high_acc & lacks_depression & has_outflow
+
+        # ── 5. Score components ───────────────────────────────────────
         # Slope score: lower slope → higher score
         slope_score_raw  = 1.0 / (1.0 + slope_deg / SLOPE_REF)
         s_min, s_max     = slope_score_raw.min(), slope_score_raw.max()
@@ -91,11 +142,11 @@ class SuitabilityService:
         e_min, e_max = dem.min(), dem.max()
         elevation_score = 1.0 - (dem - e_min) / max(e_max - e_min, 1e-6)
 
-        # Rainfall score (scalar)
+        # Rainfall score (scalar — uniform across every grid cell)
         rf_mm = request.rainfall_mm if request.rainfall_mm else 0.0
         rainfall_score_scalar = min(1.0, rf_mm / RAIN_REF)
 
-        # ── 5. Normalize weights ──────────────────────────────────────
+        # ── 6. Normalize weights ──────────────────────────────────────
         w = np.array([
             request.weight_slope,
             request.weight_depression,
@@ -105,7 +156,7 @@ class SuitabilityService:
         ], dtype=np.float64)
         w = w / w.sum()  # normalize to 1.0
 
-        # ── 6. Composite suitability map [0, 1] ──────────────────────
+        # ── 7. Composite suitability map [0, 1] ──────────────────────
         suitability = (
             w[0] * slope_score +
             w[1] * depression_score +
@@ -121,10 +172,14 @@ class SuitabilityService:
         suitability[:, :border]  = 0.0
         suitability[:, -border:] = 0.0
 
-        # ── 7. Select top-N with minimum spatial separation ──────────
+        # Exclude DEM-inferred active throughflow channels
+        suitability[channel_mask] = 0.0
+
+        # ── 8. Select top-N with spatial separation (deterministic) ───
         min_sep_cells = max(3, min(rows, cols) // 8)
         candidates_raw = cls._select_top_n_separated(
-            suitability, request.num_candidates, min_sep_cells
+            suitability, request.num_candidates, min_sep_cells,
+            flow_acc, depression_depth, dem
         )
 
         # ── 8. Build candidate site objects ──────────────────────────
@@ -254,30 +309,63 @@ class SuitabilityService:
         return filled
 
     # ──────────────────────────────────────────────────────────────────
-    # SELECT TOP-N CANDIDATES WITH SPATIAL SEPARATION
+    # SELECT TOP-N CANDIDATES WITH SPATIAL SEPARATION (DETERMINISTIC)
     # ──────────────────────────────────────────────────────────────────
     @staticmethod
     def _select_top_n_separated(
         suitability: np.ndarray,
         n: int,
-        min_sep: int
+        min_sep: int,
+        flow_acc: np.ndarray,
+        depression_depth: np.ndarray,
+        dem: np.ndarray,
     ) -> List[Tuple[int, int]]:
-        """Return top-N (row, col) positions with >= min_sep grid cells separation."""
+        """
+        Return top-N (row, col) positions with >= min_sep grid cells separation.
+
+        Cells are ordered by a DETERMINISTIC composite key (Python Timsort, stable):
+            1. suitability DESC           (primary: highest composite score)
+            2. flow_accumulation DESC     (secondary: larger catchment preferred)
+            3. depression_depth DESC      (tertiary: deeper storage basin preferred)
+            4. elevation ASC              (lower cell preferred for gravity drainage)
+            5. row ASC, col ASC           (top-left wins any remaining ties)
+            6. flat_index (unique)        (absolute guarantee of unique ordering)
+
+        Negation is used for DESC fields so ascending sort gives descending order.
+        """
         rows, cols = suitability.shape
-        flat = suitability.flatten()
-        order = np.argsort(flat)[::-1]
+
+        suit_flat = suitability.flatten()
+        acc_flat  = flow_acc.flatten().astype(np.float64)
+        dep_flat  = depression_depth.flatten()
+        elev_flat = dem.flatten()
+
+        # Consider only non-zero cells (border and channel cells are zeroed)
+        non_zero_idx = np.nonzero(suit_flat)[0]
+
+        # Build (sort_key_tuple, flat_index) list
+        sort_keys = [
+            (
+                -suit_flat[i],            # 1. suitability DESC
+                -acc_flat[i],             # 2. flow_accumulation DESC
+                -dep_flat[i],             # 3. depression_depth DESC
+                elev_flat[i],             # 4. elevation ASC
+                int(i) // cols,           # 5. row ASC
+                int(i) % cols,            # 6. col ASC
+                int(i),                   # 7. flat_index (unique tie-breaker)
+            )
+            for i in non_zero_idx
+        ]
+        sort_keys.sort()   # Python Timsort — stable and deterministic
 
         selected: List[Tuple[int, int]] = []
-
-        for idx in order:
-            r, c = divmod(int(idx), cols)
-            # Check spatial separation from already-selected candidates
-            too_close = False
-            for sr, sc in selected:
-                dist = math.sqrt((r - sr)**2 + (c - sc)**2)
-                if dist < min_sep:
-                    too_close = True
-                    break
+        for key in sort_keys:
+            flat_idx = key[-1]
+            r, c = divmod(flat_idx, cols)
+            too_close = any(
+                math.sqrt((r - sr) ** 2 + (c - sc) ** 2) < min_sep
+                for sr, sc in selected
+            )
             if not too_close:
                 selected.append((r, c))
             if len(selected) >= n:
