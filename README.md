@@ -117,14 +117,16 @@ Points outside the convex hull of the contour survey are filled via nearest-neig
 ### 4. Slope & Aspect Field
 Local elevation gradients $\frac{\partial E}{\partial x}$ and $\frac{\partial E}{\partial y}$ are computed using central finite differences (`np.gradient`):
 
-$$\text{Slope (°)} = \arctan \sqrt{\left(\frac{\partial E}{\partial x}\right)^2 + \left(\frac{\partial E}{\partial y}\right)^2} \times \frac{180}{\pi}$$
+$$\text{Slope} = \arctan \sqrt{\left(\frac{\partial E}{\partial x}\right)^2 + \left(\frac{\partial E}{\partial y}\right)^2} \times \frac{180^\circ}{\pi}$$
 
-$$\text{Aspect (Compass °)} = \left( 450^\circ - \text{atan2}\left(-\frac{\partial E}{\partial y}, \frac{\partial E}{\partial x}\right) \times \frac{180}{\pi} \right) \bmod 360^\circ$$
+$$\text{Aspect} = \left( 450^\circ - \operatorname{atan2}\left(-\frac{\partial E}{\partial y}, \frac{\partial E}{\partial x}\right) \times \frac{180^\circ}{\pi} \right) \bmod 360^\circ$$
 
 ### 5. Hillshade Shading Formulation
 Simulates 3D surface illumination from a virtual light source at azimuth $\phi_0$ ($315^\circ$ NW) and solar altitude $\alpha_0$ ($45^\circ$):
 
-$$\text{Illumination} = \sin(\alpha_0) \cos(\text{Slope}) + \cos(\alpha_0) \sin(\text{Slope}) \cos(\phi_0 - \text{Aspect})$$
+$$\text{Illumination} = \sin(\alpha_0) \cos(\beta) + \cos(\alpha_0) \sin(\beta) \cos(\phi_0 - \theta)$$
+
+where $\beta$ is terrain slope and $\theta$ is terrain aspect.
 
 *(Note: On flat agricultural plains where $\text{Slope} \approx 0^\circ$, illumination evaluates uniformly to $\sin(45^\circ) \approx 0.707$, producing uniform soft lighting; in steep terrain, it creates deep shadow relief).*
 
@@ -136,11 +138,11 @@ $$\text{Drop}_{i,j} = \frac{E_{\text{center}} - E_{i,j}}{\text{Distance}_{i,j}}$
 Flow accumulation ($A_{\text{cell}}$) is computed iteratively via topological sorting of the flow DAG, accumulating the total upstream contributing cell count.
 
 ### 7. Depression Sink Filling & Stage-Storage Formulation
-Depression sinks are identified using the Priority-Flood algorithm (Wang & Liu 2006). Pond storage volume at target water level elevation $z$ is derived using the raster grid summation:
+Depression sinks are identified using the Priority-Flood algorithm (Wang & Liu 2006). Pond storage volume at target water level elevation $z$ is derived using raster grid summation:
 
 $$V(z) = \sum_{i} \max(0, z - E_i) \, \Delta A_i$$
 
-where $E_i$ is the elevation of cell $i$ and $\Delta A_i = \text{pixel\_size\_m}^2$. The resulting relationship $z \to V(z)$ is evaluated across discrete depth levels as a **Stage-Storage Curve**.
+where $E_i$ is the elevation of cell $i$ and $\Delta A_i = \Delta x \cdot \Delta y$ is the grid cell surface area in $\mathrm{m}^2$. The resulting relationship $z \to V(z)$ is evaluated across discrete depth levels as a **Stage-Storage Curve**.
 
 ### 8. Surface Runoff Estimation (Runoff Coefficient Method)
 Annual surface runoff volume ($V$) is estimated using:
@@ -148,8 +150,8 @@ Annual surface runoff volume ($V$) is estimated using:
 $$V = P \times A \times C$$
 
 Where:
-- $P$ = Annual rainfall depth ($\text{m}$)
-- $A$ = Catchment area ($\text{m}^2$)
+- $P$ = Annual rainfall depth ($\mathrm{m}$)
+- $A$ = Catchment area ($\mathrm{m}^2$)
 - $C$ = Dimensionless runoff coefficient ($0.05 \le C \le 0.95$)
 
 *Note: This estimates total seasonal volume $V = P \times A \times C$, distinct from the classical peak discharge Rational Method ($Q = C \cdot i \cdot A$, where $i$ is rainfall intensity).*
@@ -160,11 +162,11 @@ Each DEM grid cell is evaluated across 5 normalized score components ($S_i \in [
 2. **Depression Score**: $S_{\text{dep}} = \frac{\text{fill depth}}{\max(\text{fill depth})}$ (deeper natural basin $\to$ higher score)
 3. **Catchment Score**: $S_{\text{cat}} = \frac{\ln(1 + A_{\text{cell}})}{\max(\ln(1 + A_{\text{cell}}))}$ (larger upstream area $\to$ higher score)
 4. **Elevation Score**: $S_{\text{elev}} = 1 - \frac{E - E_{\min}}{E_{\max} - E_{\min}}$ (lower terrain $\to$ higher gravity drainage)
-5. **Rainfall Score**: $S_{\text{rain}} = \min(1, \text{Rainfall}_{\text{mm}} / 800)$
+5. **Rainfall Score**: $S_{\text{rain}} = \min(1, \text{Rainfall} / 800)$
 
 Composite Suitability Score ($S \in [0, 100]$):
 
-$$S = 100 \times \sum_{i=1}^5 w_i S_i \quad \text{where } \sum w_i = 1.0$$
+$$S = 100 \times \sum_{i=1}^5 w_i S_i \quad \text{where } \sum_{i=1}^5 w_i = 1.0$$
 
 Itemized Points Breakdown out of 100:
 - Slope: up to 20 pts
