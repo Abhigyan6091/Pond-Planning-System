@@ -194,7 +194,7 @@ Regular Elevation Grid (100 × 100 DEM Raster)
    $$z(x, y) = \lambda_1 z_1 + \lambda_2 z_2 + \lambda_3 z_3 \quad \text{where } \lambda_1 + \lambda_2 + \lambda_3 = 1$$
    This linear interpolation honours every contour line faithfully and prevents the artificial "bull's-eye" artifacts commonly produced by Inverse Distance Weighting (IDW).
 4. **Boundary Extrapolation**: Cells falling outside the convex hull of the contour vertices are assigned elevations via nearest-neighbor extrapolation, ensuring that the generated raster matrix contains zero `NaN` values.
-5. **Standard Metric Resolution**: The output grid is configured as a standard $100 \times 100$ matrix, with physical cell dimension ($\text{pixel\_size\_m}$) computed using the Haversine formula at the centroid latitude.
+5. **Standard Metric Resolution**: The output grid is configured as a standard $100 \times 100$ matrix, with physical cell dimension (spatial resolution in meters, $\Delta x$) computed using the Haversine formula at the centroid latitude.
 
 ---
 
@@ -215,7 +215,7 @@ Every grid cell is scored across four intrinsic terrain parameters:
    $$S_{\text{elev}} = 1.0 - \frac{z - z_{\min}}{z_{\max} - z_{\min}}$$
 
 ### Composite Scoring & Spatial Filtering
-The normalized criteria are combined into a composite suitability score ($0 \dots 100$):
+The normalized criteria are combined into a composite suitability score (0–100 scale):
 
 $$S_{\text{composite}} = 100 \times \left( w_1 S_{\text{slope}} + w_2 S_{\text{dep}} + w_3 S_{\text{cat}} + w_4 S_{\text{elev}} \right)$$
 
@@ -248,7 +248,7 @@ Surface water flow is modeled using the deterministic eight-direction (D8) steep
 
 $$s_{i,j; k} = \frac{z_{i,j} - z_k}{d_k}$$
 
-where $z_{i,j}$ is the elevation of the current cell, $z_k$ is the neighbor elevation, and $d_k$ is the horizontal cell distance ($d_k = \text{pixel\_size\_m}$ for orthogonal neighbors, and $d_k = \sqrt{2} \cdot \text{pixel\_size\_m}$ for diagonal neighbors). The cell flow direction pointer $D(i, j)$ is assigned to the neighbor exhibiting the maximum positive drop rate $\max(s_{i,j; k})$.
+where $z_{i,j}$ is the elevation of the current cell, $z_k$ is the neighbor elevation, and $d_k$ is the horizontal cell distance ($d_k = \Delta x$ for orthogonal neighbors, and $d_k = \sqrt{2} \Delta x$ for diagonal neighbors, where $\Delta x$ is the grid cell resolution in meters). The cell flow direction pointer $D(i, j)$ is assigned to the neighbor exhibiting the maximum positive drop rate $\max(s_{i,j; k})$.
 
 ### 2. Flow Accumulation
 Flow accumulation counts the total number of upstream cells contributing drainage to each cell. It is solved in linear time $O(N)$ by performing a topological sort over the Directed Acyclic Graph (DAG) defined by the D8 flow pointers.
@@ -264,7 +264,7 @@ To delineate the catchment for the identified pond site $(r_{\text{out}}, c_{\te
 ### 4. Area, Perimeter, and Boundary Polygon Calculation
 - **Contributing Cell Count**: $N_{\text{cells}} = \sum_{r, c} M(r, c)$.
 - **Catchment Surface Area**:
-  $$\text{Area}_{\text{m}^2} = N_{\text{cells}} \times (\text{pixel\_size\_m})^2, \quad \text{Area}_{\text{km}^2} = \frac{\text{Area}_{\text{m}^2}}{1,000,000}$$
+  $$\text{Area}_{\mathrm{m}^2} = N_{\text{cells}} \times (\Delta x)^2, \quad \text{Area}_{\mathrm{km}^2} = \frac{\text{Area}_{\mathrm{m}^2}}{1,000,000}$$
 - **Boundary Polygon**: Extracted by tracing the outer boundary contour of the binary mask $M$, converting grid coordinates to $(\text{latitude}, \text{longitude})$ tuples, and calculating geodesic boundary perimeter ($\text{km}$).
 
 ---
@@ -273,23 +273,95 @@ To delineate the catchment for the identified pond site $(r_{\text{out}}, c_{\te
 
 ### Endpoint Specification
 
-- **Primary Route**: `POST /api/contour-analysis/analyzeContour`
-- **Compatibility Alias**: `POST /api/contour-analysis/findCatchment`
-- **HTTP Method**: `POST`
-- **Content-Type**: `multipart/form-data`
-- **Authentication**: None required (Public planning API)
-- **Interactive Swagger UI**: `http://localhost:8000/docs`
+| Property | Value |
+| :--- | :--- |
+| **Primary Route** | `POST /api/contour-analysis/analyzeContour` |
+| **Compatibility Alias** | `POST /api/contour-analysis/findCatchment` |
+| **HTTP Method** | `POST` |
+| **Request Content-Type** | `multipart/form-data` |
+| **Response Content-Type** | `application/json` |
+| **Authentication** | None required (Open GIS / academic planning API) |
+| **Interactive Swagger UI** | `http://localhost:8000/docs` |
+| **Alternative ReDoc UI** | `http://localhost:8000/redoc` |
 
 ```
 [FIGURE 1 — FastAPI Swagger UI showing Phase 2 endpoint]
 *Figure 1: OpenAPI / Swagger interactive documentation demonstrating POST /api/contour-analysis/analyzeContour.*
 ```
 
-### Request Parameters
+---
 
-| Parameter | Type | In | Required | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `file` | `UploadFile` | `formData` | Yes | Vector contour map file (`.kml` or `.kmz`, max 50 MB) |
+### API Inputs (Request Parameters)
+
+| Parameter | Type | In | Required | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `file` | `UploadFile` (binary) | `formData` | **Yes** | Extensions: `.kml`, `.kmz`<br>Max size: `50 MB`<br>Min contours: `3`<br>Min levels: `2` | Topographic contour survey map containing vector `LineString` isolines with associated elevation metadata. |
+
+---
+
+### API Outputs (Response Schema & Field Descriptions)
+
+The endpoint returns a strongly-typed JSON response structured into four main geospatial domains:
+
+#### 1. Top-Level Response Fields
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `success` | `boolean` | `true` if analysis completed successfully; `false` on failure. |
+| `error_message` | `string \| null` | Detailed error description if `success` is `false`. |
+| `input` | `InputInfo` (object) | Summary metadata of the parsed input contour map. |
+| `terrain` | `TerrainInfo` (object) | Reconstructed DEM grid dimensions, bounding box, and elevation statistics. |
+| `pond_site` | `PondSiteInfo` (object) | Optimal identified village pond location, terrain characteristics, and score. |
+| `catchment` | `CatchmentInfo` (object) | Upstream contributing catchment area, perimeter, and boundary coordinates. |
+| `dem_id` | `string` | Unique identifier for the reconstructed DEM session. |
+| `elevation_overlay_url` | `string` | URL path to the generated vibrant color-relief PNG raster overlay. |
+| `hillshade_overlay_url` | `string` | URL path to the generated 3D analytical hillshade PNG raster overlay. |
+| `candidates` | `Array<CandidateSite>` | Ranked list of top-5 spatially separated candidate pond sites across the survey area. |
+
+#### 2. `input` Object Schema
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `filename` | `string` | Original name of the uploaded file (e.g. `"contours_1m.kml"`). |
+| `format` | `string` | Detected format (`"KML"` or `"KMZ"`). |
+| `contour_count` | `integer` | Total number of valid contour `LineString` features extracted. |
+| `elevation_min_m` | `float` | Minimum contour line elevation found in the file (meters). |
+| `elevation_max_m` | `float` | Maximum contour line elevation found in the file (meters). |
+| `contour_interval_m` | `float` | Estimated or derived contour interval step (meters). |
+
+#### 3. `terrain` Object Schema
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `min_elevation_m` | `float` | Minimum ground elevation across the reconstructed raster grid (meters). |
+| `max_elevation_m` | `float` | Maximum ground elevation across the reconstructed raster grid (meters). |
+| `mean_elevation_m` | `float` | Mean ground elevation across the reconstructed raster grid (meters). |
+| `grid_rows` | `integer` | Number of raster rows in the interpolated grid ($100$). |
+| `grid_cols` | `integer` | Number of raster columns in the interpolated grid ($100$). |
+| `pixel_size_m` | `float` | Ground spatial resolution per grid cell in meters (e.g. $33.67\text{ m}$). |
+| `bounds` | `TerrainBounds` (object) | Geographic bounding box: `min_lat`, `max_lat`, `min_lon`, `max_lon`. |
+
+#### 4. `pond_site` Object Schema
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `latitude` | `float` | Geographic latitude (WGS84) of the optimal pond location. |
+| `longitude` | `float` | Geographic longitude (WGS84) of the optimal pond location. |
+| `elevation_m` | `float` | Ground elevation at the pond site (meters above sea level). |
+| `slope_deg` | `float` | Local ground slope gradient in degrees at the pond site. |
+| `flow_accumulation` | `integer` | Number of upstream raster cells draining into this cell. |
+| `depression_depth_m` | `float` | Natural topographic sink depth from Priority-Flood filling (meters). |
+| `suitability_score` | `float` | Weighted composite land suitability score on a scale of $0 \dots 100$. |
+| `suitability_tier` | `string` | Categorical classification (`"Highly Suitable"`, `"Recommended"`, etc.). |
+| `reason` | `string` | Academic justification listing positive terrain scoring criteria. |
+
+#### 5. `catchment` Object Schema
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `area_m2` | `float` | Total contributing drainage catchment surface area in square meters ($\text{m}^2$). |
+| `area_km2` | `float` | Total contributing drainage catchment surface area in square kilometers ($\text{km}^2$). |
+| `perimeter_km` | `float` | Geodesic perimeter length of the watershed boundary polygon ($\text{km}$). |
+| `avg_slope_deg` | `float` | Mean terrain slope gradient across all cells inside the catchment ($\text{deg}$). |
+| `contributing_cells` | `integer` | Count of grid cells belonging to the upstream catchment. |
+| `boundary` | `Array<[lon, lat]>` | Ordered array of geographic coordinate pairs defining the outer catchment polygon. |
+
+---
 
 ### Example cURL Request
 
@@ -300,7 +372,9 @@ curl -X POST "http://localhost:8000/api/contour-analysis/analyzeContour" \
   -F "file=@contours_1m.kml;type=application/vnd.google-earth.kml+xml"
 ```
 
-### Structured JSON Response Schema
+---
+
+### Example Structured JSON Response
 
 ```json
 {
@@ -357,15 +431,17 @@ curl -X POST "http://localhost:8000/api/contour-analysis/analyzeContour" \
 }
 ```
 
+---
+
 ### HTTP Response Status Codes
 
 | Status Code | Description | Reason |
 | :--- | :--- | :--- |
-| `200 OK` | Successful analysis | Valid KML/KMZ parsed, terrain reconstructed, pond site and catchment returned |
-| `400 Bad Request` | Unsupported file extension | Uploaded file does not end in `.kml` or `.kmz`, or payload is 0 bytes |
-| `413 Payload Too Large` | File size limit exceeded | Uploaded file exceeds 50 MB |
-| `422 Unprocessable Entity` | Malformed contour data | Corrupted XML, $<3$ contours, single elevation level, or missing elevation tags |
-| `500 Server Error` | Internal processing error | Unexpected runtime or interpolation failure |
+| `200 OK` | Successful analysis | Valid KML/KMZ parsed, terrain reconstructed, pond site and catchment returned. |
+| `400 Bad Request` | Unsupported file extension | Uploaded file does not end in `.kml` or `.kmz`, or payload is 0 bytes. |
+| `413 Payload Too Large` | File size limit exceeded | Uploaded file exceeds 50 MB limit. |
+| `422 Unprocessable Entity` | Malformed contour data | Corrupted XML, $<3$ contours, single elevation level, or missing elevation tags. |
+| `500 Server Error` | Internal processing error | Unexpected runtime or interpolation failure. |
 
 ---
 

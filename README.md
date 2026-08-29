@@ -119,7 +119,7 @@ Local elevation gradients $\frac{\partial E}{\partial x}$ and $\frac{\partial E}
 
 $$\text{Slope} = \arctan \sqrt{\left(\frac{\partial E}{\partial x}\right)^2 + \left(\frac{\partial E}{\partial y}\right)^2} \times \frac{180^\circ}{\pi}$$
 
-$$\text{Aspect} = \left( 450^\circ - \operatorname{atan2}\left(-\frac{\partial E}{\partial y}, \frac{\partial E}{\partial x}\right) \times \frac{180^\circ}{\pi} \right) \bmod 360^\circ$$
+$$\text{Aspect} = \left( 450^\circ - \text{atan2}\left(-\frac{\partial E}{\partial y}, \frac{\partial E}{\partial x}\right) \times \frac{180^\circ}{\pi} \right) \bmod 360^\circ$$
 
 ### 5. Hillshade Shading Formulation
 Simulates 3D surface illumination from a virtual light source at azimuth $\phi_0$ ($315^\circ$ NW) and solar altitude $\alpha_0$ ($45^\circ$):
