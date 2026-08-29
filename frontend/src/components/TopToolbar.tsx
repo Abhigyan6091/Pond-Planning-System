@@ -10,7 +10,7 @@ import {
 import { demService } from '../services/api';
 
 interface TopToolbarProps {
-  selectedPoint: LatLng | null;
+  villageCenter: LatLng | null;
   villageName: string;
   radiusKm: number;
   onRadiusChange: (r: number) => void;
@@ -33,7 +33,7 @@ interface TopToolbarProps {
 }
 
 export const TopToolbar: React.FC<TopToolbarProps> = ({
-  selectedPoint, villageName, radiusKm, onRadiusChange, roiMode, onRoiModeChange,
+  villageCenter, villageName, radiusKm, onRadiusChange, roiMode, onRoiModeChange,
   provider, onProviderChange, contourInterval, onContourIntervalChange,
   interactionMode, onInteractionModeChange, onOpen3DTerrain, onDownloadDem,
   isLoading, onLocationFound, demLoaded, basemap, onBasemapChange, onGenerateReport,
@@ -191,10 +191,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           <option value="opentopodata">OpenTopoData</option>
         </select>
 
-        {selectedPoint && (
+        {villageCenter && (
           <div className="hidden 2xl:flex items-center space-x-1 text-[11px] font-mono bg-[#0a0d14]/80 border border-[#1f293d] px-2 py-1.5 rounded-lg text-slate-300">
             <MapPin className="w-3 h-3 text-rose-400" />
-            <span>{selectedPoint.lat.toFixed(4)}°, {selectedPoint.lng.toFixed(4)}°</span>
+            <span>{villageCenter.lat.toFixed(4)}°, {villageCenter.lng.toFixed(4)}°</span>
           </div>
         )}
 

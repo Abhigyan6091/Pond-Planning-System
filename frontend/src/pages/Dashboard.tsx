@@ -24,8 +24,17 @@ import { demService } from '../services/api';
 import { Download, Trash2, Hexagon, Map, Upload, Eye } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
-  // --- ROI / DEM state ---
-  const [selectedPoint, setSelectedPoint] = useState<LatLng | null>({ lat: 19.8762, lng: 75.3433 }); // Aurangabad, Maharashtra
+  // ─── Analysis anchor ────────────────────────────────────────────────────────
+  // `villageCenter` is the user-selected location that drives "Analyze Village".
+  // It is set ONLY when the user explicitly picks a location via map click or
+  // village search. Clicking a candidate or panning the map MUST NOT mutate it.
+  const [villageCenter, setVillageCenter] = useState<LatLng | null>({ lat: 19.8762, lng: 75.3433 });
+
+  // `selectedPoint` is the map view/pan center. It is updated whenever the user
+  // selects a candidate, clicks the recommendation, or pans to inspect a site.
+  // It is intentionally decoupled from the analysis anchor above.
+  const [selectedPoint, setSelectedPoint] = useState<LatLng | null>({ lat: 19.8762, lng: 75.3433 });
+
   const [villageName, setVillageName] = useState<string>('Aurangabad Region');
   const [radiusKm, setRadiusKm] = useState<number>(2.0);
   const [roiMode, setRoiMode] = useState<ROISelectionMode>('point');
@@ -86,17 +95,19 @@ export const Dashboard: React.FC = () => {
     recommendedSite: true,
   });
 
+  // Bounding box displayed on the map preview is derived from villageCenter so
+  // the user always sees the region that "Analyze Village" will actually analyse.
   const computedBbox: BoundingBox | null = useMemo(() => {
-    if (!selectedPoint) return null;
+    if (!villageCenter) return null;
     const latDelta = radiusKm / 111.0;
-    const lngDelta = radiusKm / (111.0 * Math.cos((selectedPoint.lat * Math.PI) / 180.0));
+    const lngDelta = radiusKm / (111.0 * Math.cos((villageCenter.lat * Math.PI) / 180.0));
     return {
-      south: selectedPoint.lat - latDelta,
-      north: selectedPoint.lat + latDelta,
-      west: selectedPoint.lng - lngDelta,
-      east: selectedPoint.lng + lngDelta,
+      south: villageCenter.lat - latDelta,
+      north: villageCenter.lat + latDelta,
+      west: villageCenter.lng - lngDelta,
+      east: villageCenter.lng + lngDelta,
     };
-  }, [selectedPoint, radiusKm]);
+  }, [villageCenter, radiusKm]);
 
   const handleToggleLayer = (key: keyof LayerVisibility) => {
     setLayers((prev) => {
@@ -160,8 +171,10 @@ export const Dashboard: React.FC = () => {
       const payload: any = { provider, dem_type: 'COP30', resolution: 100 };
       if (roiMode === 'polygon' && polygonPoints.length >= 3) {
         payload.polygon = { coordinates: polygonPoints.map((p) => [p.lng, p.lat]) };
-      } else if (selectedPoint) {
-        payload.center = selectedPoint;
+      } else if (villageCenter) {
+        // ALWAYS use villageCenter — never selectedPoint — so that candidate
+        // clicks between analyses cannot silently shift the analysis region.
+        payload.center = villageCenter;
         payload.radius_km = radiusKm;
       }
 
@@ -190,8 +203,9 @@ export const Dashboard: React.FC = () => {
       ).then(setStreamNetwork).catch(console.error);
 
       // 4. Fetch Rainfall from Open-Meteo
-      const latVal = selectedPoint ? selectedPoint.lat : res.metadata.bounds.south;
-      const lngVal = selectedPoint ? selectedPoint.lng : res.metadata.bounds.west;
+      // Use villageCenter for the rainfall lookup so it matches the analysis region.
+      const latVal = villageCenter ? villageCenter.lat : res.metadata.bounds.south;
+      const lngVal = villageCenter ? villageCenter.lng : res.metadata.bounds.west;
       setRainfallLoading(true);
       let rfRes: RainfallData | null = null;
       try {
@@ -351,7 +365,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#0a0d14]">
       <TopToolbar
-        selectedPoint={selectedPoint}
+        villageCenter={villageCenter}
         villageName={villageName}
         radiusKm={radiusKm}
         onRadiusChange={setRadiusKm}
@@ -370,6 +384,9 @@ export const Dashboard: React.FC = () => {
         onDownloadDem={handleDownloadDem}
         isLoading={isLoading || analysisLoading || rainfallLoading || suitabilityLoading}
         onLocationFound={(loc, name) => {
+          // Explicit location selection → update BOTH the analysis anchor and the
+          // map view centre so the map pans to the newly chosen village.
+          setVillageCenter(loc);
           setSelectedPoint(loc);
           if (name) setVillageName(name);
           if (roiMode === 'polygon') setPolygonPoints([]);
@@ -405,6 +422,7 @@ export const Dashboard: React.FC = () => {
           selectedSite={selectedCandidate}
           onSelectSite={(site) => {
             setSelectedCandidate(site);
+            // Pan the map to the candidate — but DO NOT touch villageCenter.
             setSelectedPoint({ lat: site.lat, lng: site.lng });
           }}
           isLoading={suitabilityLoading}
@@ -417,7 +435,10 @@ export const Dashboard: React.FC = () => {
         <RecommendationPanel
           recommended={recommendedSite}
           onClose={() => setLayers(prev => ({ ...prev, recommendedSite: false }))}
-          onSelectOnMap={(site) => setSelectedPoint({ lat: site.lat, lng: site.lng })}
+          onSelectOnMap={(site) => {
+            // Pan to recommendation — but DO NOT touch villageCenter.
+            setSelectedPoint({ lat: site.lat, lng: site.lng });
+          }}
         />
       )}
 
@@ -553,7 +574,9 @@ export const Dashboard: React.FC = () => {
               <ContourUploadPanel
                 onAnalysisComplete={async (res) => {
                   setKmlResult(res);
-                  // Pan map to pond site if available
+                  // KML upload: pan map to pond site if available.
+                  // The KML workflow is independent of villageCenter — it provides
+                  // its own terrain, so only the map view is updated.
                   if (res.pond_site) {
                     setSelectedPoint({ lat: res.pond_site.latitude, lng: res.pond_site.longitude });
                   }
@@ -662,7 +685,12 @@ export const Dashboard: React.FC = () => {
 
       <TerrainMap
         selectedPoint={selectedPoint}
-        onPointSelect={setSelectedPoint}
+        onPointSelect={(pt) => {
+          // A direct map click is an explicit new analysis location selection.
+          // Update both the analysis anchor and the map view.
+          setVillageCenter(pt);
+          setSelectedPoint(pt);
+        }}
         computedBbox={computedBbox}
         roiMode={roiMode}
         polygonPoints={polygonPoints}
@@ -688,6 +716,7 @@ export const Dashboard: React.FC = () => {
         kmlResult={kmlResult}
         onCandidateClick={(site) => {
           setSelectedCandidate(site);
+          // Pan map to clicked candidate — DO NOT touch villageCenter.
           setSelectedPoint({ lat: site.lat, lng: site.lng });
         }}
       />
