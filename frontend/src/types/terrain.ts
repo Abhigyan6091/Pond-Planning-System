@@ -287,3 +287,65 @@ export interface SuitabilityResponse {
   score_explanation: Record<string, string>;
   methodology_note: string;
 }
+
+// ── Phase 2: Contour Analysis ─────────────────────────────────────────
+export interface ContourTerrainBounds {
+  min_lat: number;
+  max_lat: number;
+  min_lon: number;
+  max_lon: number;
+}
+
+export interface ContourInputInfo {
+  filename: string;
+  format: 'KML' | 'KMZ';
+  contour_count: number;
+  elevation_min_m: number;
+  elevation_max_m: number;
+  contour_interval_m: number;
+}
+
+export interface ContourTerrainInfo {
+  min_elevation_m: number;
+  max_elevation_m: number;
+  mean_elevation_m: number;
+  grid_rows: number;
+  grid_cols: number;
+  pixel_size_m: number;
+  bounds: ContourTerrainBounds;
+}
+
+export interface ContourPondSiteInfo {
+  latitude: number;
+  longitude: number;
+  elevation_m: number;
+  slope_deg: number;
+  flow_accumulation: number;
+  depression_depth_m: number;
+  suitability_score: number;
+  suitability_tier: string;
+  reason: string;
+}
+
+export interface ContourCatchmentInfo {
+  area_m2: number;
+  area_km2: number;
+  perimeter_km: number;
+  avg_slope_deg: number;
+  contributing_cells: number;
+  boundary: number[][];  // [[lon, lat], ...]
+}
+
+export interface ContourAnalysisResponse {
+  success: boolean;
+  error_message?: string;
+  input?: ContourInputInfo;
+  terrain?: ContourTerrainInfo;
+  pond_site?: ContourPondSiteInfo;
+  catchment?: ContourCatchmentInfo;
+  dem_id?: string;
+  elevation_matrix?: number[][];
+  elevation_overlay_url?: string;
+  hillshade_overlay_url?: string;
+  candidates?: CandidateSite[];
+}

@@ -9,6 +9,7 @@ from backend.api.rainfall_routes import router as rainfall_router
 from backend.api.runoff_routes import router as runoff_router
 from backend.api.suitability_routes import router as suitability_router
 from backend.api.report_routes import router as report_router
+from backend.api.contour_analysis_routes import router as contour_analysis_router  # Phase 2
 
 api_router = APIRouter()
 api_router.include_router(dem_router)
@@ -21,3 +22,4 @@ api_router.include_router(rainfall_router)
 api_router.include_router(runoff_router)
 api_router.include_router(suitability_router)
 api_router.include_router(report_router)
+api_router.include_router(contour_analysis_router)  # Phase 2

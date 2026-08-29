@@ -6,6 +6,7 @@ import {
   PondResponseData, ElevationProfileResponseData, Terrain3DData, ContourPolylineData,
   FlowVectorsData, StreamNetworkData,
   RainfallData, RunoffData, SuitabilityResponse, CandidateSite,
+  ContourAnalysisResponse,
 } from '../types/terrain';
 
 const API_BASE = '/api';
@@ -181,6 +182,18 @@ export const demService = {
       responseType: 'text',
       headers: { 'Accept': 'text/html' },
     });
+    return response.data;
+  },
+
+  // ── Phase 2: KML/KMZ Contour Analysis ────────────────────────────
+  analyzeContour: async (file: File): Promise<ContourAnalysisResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await axios.post<ContourAnalysisResponse>(
+      `${API_BASE}/contour-analysis/analyzeContour`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
     return response.data;
   },
 

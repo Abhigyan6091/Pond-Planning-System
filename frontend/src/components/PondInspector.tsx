@@ -1,7 +1,8 @@
 import React from 'react';
 import Plot from 'react-plotly.js';
 import { PondInfo } from '../types/terrain';
-import { Database, Waves, X, Layers, Maximize2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Database, Waves, Layers, Maximize2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { DraggablePanel } from './DraggablePanel';
 
 interface PondInspectorProps {
   pond: PondInfo;
@@ -10,26 +11,16 @@ interface PondInspectorProps {
 
 export const PondInspector: React.FC<PondInspectorProps> = ({ pond, onClose }) => {
   return (
-    <div className="absolute top-20 right-4 z-[950] w-84 bg-[#121824]/95 backdrop-blur-md border border-[#1f293d] rounded-xl p-4 shadow-2xl space-y-3.5">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#1f293d] pb-2.5">
-        <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 rounded-md bg-blue-500/20 border border-blue-500/40 flex items-center justify-center">
-            <Database className="w-3.5 h-3.5 text-blue-400" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-100">POND ANALYSIS</h3>
-            <p className="text-[10px] font-mono text-blue-400">Depression Depth & Storage Volume</p>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-slate-800 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
+    <DraggablePanel
+      id="pond-inspector"
+      title="POND ANALYSIS"
+      subtitle={`Depth: ${pond.max_depth} m · Vol: ${pond.volume_m3.toLocaleString()} m³`}
+      icon={<Database className="w-4 h-4 text-blue-400" />}
+      initialPosition={{ top: 80, right: 380 }}
+      width="340px"
+      onClose={onClose}
+      zIndex={950}
+    >
       {/* Main Metrics */}
       <div className="grid grid-cols-2 gap-2 text-xs font-mono">
         <div className="bg-blue-950/30 p-2.5 rounded-lg border border-blue-500/30">
@@ -58,75 +49,74 @@ export const PondInspector: React.FC<PondInspectorProps> = ({ pond, onClose }) =
         <div className="bg-[#0a0d14]/90 p-2.5 rounded-lg border border-[#1f293d]">
           <div className="flex items-center space-x-1 text-[10px] text-slate-400 mb-0.5">
             <Layers className="w-3 h-3 text-indigo-400" />
-            <span>GRID CELLS</span>
+            <span>CATCHMENT CELLS</span>
           </div>
-          <span className="text-xs font-semibold text-slate-200">{pond.catchment_cells} cells</span>
+          <span className="text-xs font-semibold text-indigo-300">{pond.catchment_cells}</span>
         </div>
       </div>
 
-      {/* Elevations */}
-      <div className="bg-[#0a0d14]/80 border border-[#1f293d] p-2.5 rounded-lg space-y-1.5 font-mono text-xs">
+      {/* Elevation Details */}
+      <div className="bg-[#0a0d14]/80 p-2.5 rounded-lg border border-[#1f293d] space-y-1.5 text-xs font-mono">
         <div className="flex items-center justify-between text-slate-300">
-          <div className="flex items-center space-x-1 text-[10px] text-slate-400">
-            <ArrowUpCircle className="w-3 h-3 text-sky-400" />
-            <span>Water Level (Spill Rim)</span>
+          <div className="flex items-center space-x-1.5">
+            <ArrowDownCircle className="w-3.5 h-3.5 text-rose-400" />
+            <span>Bottom Elevation:</span>
           </div>
-          <span className="font-bold text-sky-300">{pond.water_level} m</span>
+          <span className="font-bold text-rose-300">{pond.bottom_elevation} m</span>
         </div>
         <div className="flex items-center justify-between text-slate-300">
-          <div className="flex items-center space-x-1 text-[10px] text-slate-400">
-            <ArrowDownCircle className="w-3 h-3 text-amber-400" />
-            <span>Bottom Elevation</span>
+          <div className="flex items-center space-x-1.5">
+            <ArrowUpCircle className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Spill Water Level:</span>
           </div>
-          <span className="font-bold text-amber-300">{pond.bottom_elevation} m</span>
+          <span className="font-bold text-cyan-300">{pond.water_level} m</span>
         </div>
       </div>
+
+      {/* Stage-Storage Curve */}
       {pond.stage_storage_curve && pond.stage_storage_curve.length > 0 && (
-        <div className="bg-[#0a0d14]/90 border border-[#1f293d] p-2 rounded-lg">
-          <div className="text-[10px] font-mono text-slate-400 mb-1 flex items-center justify-between">
-            <span className="font-bold text-cyan-400">STAGE-STORAGE CURVE</span>
-            <span className="text-[9px] text-slate-500">V = ∫ A(z) dz</span>
+        <div className="space-y-1.5 border-t border-[#1f293d] pt-2.5">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
+            <Waves className="w-3 h-3 text-cyan-400" />
+            <span>Stage-Storage Capacity Curve</span>
           </div>
-          <div className="w-full h-36">
+
+          <div className="bg-[#0a0d14] rounded-lg p-1 border border-[#1f293d]">
             <Plot
               data={[
                 {
-                  x: pond.stage_storage_curve.map((p) => p.depth_m),
-                  y: pond.stage_storage_curve.map((p) => p.volume_m3),
+                  x: pond.stage_storage_curve.map((pt) => pt.depth_m),
+                  y: pond.stage_storage_curve.map((pt) => pt.volume_m3),
                   type: 'scatter',
                   mode: 'lines+markers',
-                  fill: 'tozeroy',
-                  fillcolor: 'rgba(59, 130, 246, 0.15)',
-                  line: { color: '#3b82f6', width: 2 },
-                  marker: { color: '#60a5fa', size: 4 },
                   name: 'Volume (m³)',
+                  line: { color: '#38bdf8', width: 2.5 },
+                  marker: { size: 4, color: '#0284c7' },
                 },
               ]}
               layout={{
-                autosize: true,
-                margin: { l: 40, r: 10, t: 10, b: 30 },
+                width: 290,
+                height: 150,
+                margin: { l: 45, r: 10, t: 10, b: 30 },
                 paper_bgcolor: 'transparent',
                 plot_bgcolor: 'transparent',
                 xaxis: {
-                  title: { text: 'Depth (m)', font: { color: '#94a3b8', size: 9 } },
-                  tickfont: { color: '#64748b', size: 8 },
+                  title: { text: 'Depth (m)', font: { size: 9, color: '#94a3b8' } },
+                  tickfont: { size: 8, color: '#64748b' },
                   gridcolor: '#1e293b',
-                  zerolinecolor: '#334155',
                 },
                 yaxis: {
-                  title: { text: 'Volume (m³)', font: { color: '#94a3b8', size: 9 } },
-                  tickfont: { color: '#64748b', size: 8 },
+                  title: { text: 'Storage (m³)', font: { size: 9, color: '#94a3b8' } },
+                  tickfont: { size: 8, color: '#64748b' },
                   gridcolor: '#1e293b',
-                  zerolinecolor: '#334155',
                 },
                 showlegend: false,
               }}
-              config={{ responsive: true, displayModeBar: false }}
-              style={{ width: '100%', height: '100%' }}
+              config={{ displayModeBar: false, responsive: true }}
             />
           </div>
         </div>
       )}
-    </div>
+    </DraggablePanel>
   );
 };

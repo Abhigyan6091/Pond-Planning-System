@@ -1,6 +1,7 @@
 import React from 'react';
 import { WatershedData, DropletPath } from '../types/terrain';
-import { Waves, Droplets, X, MapPin, Maximize2, TrendingDown, BarChart2 } from 'lucide-react';
+import { Waves, Droplets, MapPin, Maximize2, TrendingDown, BarChart2 } from 'lucide-react';
+import { DraggablePanel } from './DraggablePanel';
 
 interface HydrologyInspectorProps {
   watershed: WatershedData | null;
@@ -16,28 +17,16 @@ export const HydrologyInspector: React.FC<HydrologyInspectorProps> = ({
   if (!watershed && !droplet) return null;
 
   return (
-    <div className="absolute top-20 right-4 z-[950] w-80 bg-[#121824]/95 backdrop-blur-md border border-[#1f293d] rounded-xl p-4 shadow-2xl space-y-3.5">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#1f293d] pb-2.5">
-        <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 rounded-md bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center">
-            <Waves className="w-3.5 h-3.5 text-indigo-400" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-100">HYDROLOGY INSPECTOR</h3>
-            <p className="text-[10px] font-mono text-indigo-400">
-              {watershed ? 'Watershed Catchment' : 'Droplet Flow Trace'}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-slate-800 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
+    <DraggablePanel
+      id="hydrology-inspector"
+      title="HYDROLOGY INSPECTOR"
+      subtitle={watershed ? 'Watershed Catchment' : 'Droplet Flow Trace'}
+      icon={<Waves className="w-4 h-4 text-indigo-400" />}
+      initialPosition={{ top: 80, right: 380 }}
+      width="320px"
+      onClose={onClose}
+      zIndex={950}
+    >
       {/* Droplet Path Stats */}
       {droplet && (
         <div className="space-y-2">
@@ -73,7 +62,7 @@ export const HydrologyInspector: React.FC<HydrologyInspectorProps> = ({
         <div className="space-y-2">
           <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
             <Waves className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Feature 6: Catchment Area</span>
+            <span>Catchment Delineation</span>
           </div>
 
           <div className="flex items-center space-x-1.5 text-[11px] font-mono text-slate-400 bg-[#0a0d14]/80 px-2.5 py-1.5 rounded-lg border border-[#1f293d]">
@@ -107,6 +96,6 @@ export const HydrologyInspector: React.FC<HydrologyInspectorProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </DraggablePanel>
   );
 };

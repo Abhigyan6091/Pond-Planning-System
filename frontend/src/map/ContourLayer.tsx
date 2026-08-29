@@ -19,17 +19,19 @@ export const ContourLayer: React.FC<ContourLayerProps> = ({
   maxElev,
 }) => {
   const getContourColor = (elev: number, isSelected: boolean) => {
-    if (isSelected) return '#06b6d4';
+    if (isSelected) return '#00f0ff';
     const ratio = Math.max(0, Math.min(1, (elev - minElev) / (maxElev - minElev + 1e-6)));
-    if (ratio < 0.25) return '#34d399';
-    if (ratio < 0.6) return '#f59e0b';
-    return '#f43f5e';
+    if (ratio < 0.20) return '#10b981'; // Emerald for valley lowlands
+    if (ratio < 0.45) return '#06b6d4'; // Cyan for lower slopes
+    if (ratio < 0.70) return '#f59e0b'; // Amber for mid terrain
+    return '#f43f5e';                  // Coral/Rose for ridge tops
   };
 
   return (
     <>
       {contours.map((contour) => {
         const isSelected = selectedContour?.id === contour.id;
+        const isIndexContour = contour.elevation % 5 === 0 || contour.elevation % 10 === 0;
         const positions = contour.coordinates.map((pt) => [pt[1], pt[0]] as [number, number]);
         const color = getContourColor(contour.elevation, isSelected);
 
@@ -39,8 +41,8 @@ export const ContourLayer: React.FC<ContourLayerProps> = ({
             positions={positions}
             pathOptions={{
               color: color,
-              weight: isSelected ? 4 : 1.5,
-              opacity: isSelected ? 1.0 : 0.8,
+              weight: isSelected ? 4.5 : isIndexContour ? 2.6 : 1.8,
+              opacity: isSelected ? 1.0 : isIndexContour ? 0.95 : 0.85,
             }}
             eventHandlers={{
               click: (e) => {
@@ -51,8 +53,8 @@ export const ContourLayer: React.FC<ContourLayerProps> = ({
           >
             <Tooltip sticky>
               <div className="text-xs space-y-1 font-mono p-1">
-                <div className="font-bold text-cyan-400">Contour Isolines</div>
-                <div>Elevation: <span className="font-semibold text-slate-100">{contour.elevation} m</span></div>
+                <div className="font-bold text-cyan-400">Contour Isoline</div>
+                <div>Elevation: <span className="font-semibold text-white px-1 py-0.5 rounded bg-slate-800">{contour.elevation} m</span></div>
                 <div>Arc Length: <span className="font-semibold text-slate-100">{contour.length_km} km ({contour.length_m} m)</span></div>
                 <div>Vertices: <span className="font-semibold text-slate-100">{contour.vertex_count}</span></div>
                 {contour.is_closed && contour.area_km2 !== null && (

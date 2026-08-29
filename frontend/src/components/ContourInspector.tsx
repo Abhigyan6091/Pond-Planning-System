@@ -1,6 +1,7 @@
 import React from 'react';
 import { ContourPolylineData } from '../types/terrain';
-import { Activity, Ruler, Maximize2, Hash, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Activity, Ruler, Hash, CheckCircle, AlertCircle } from 'lucide-react';
+import { DraggablePanel } from './DraggablePanel';
 
 interface ContourInspectorProps {
   contour: ContourPolylineData | null;
@@ -11,30 +12,20 @@ export const ContourInspector: React.FC<ContourInspectorProps> = ({ contour, onC
   if (!contour) return null;
 
   return (
-    <div className="absolute top-20 right-4 z-[950] w-80 bg-[#121824]/95 backdrop-blur-md border border-[#1f293d] rounded-xl p-4 shadow-2xl space-y-3.5 transition-all">
-      {/* Card Header */}
-      <div className="flex items-center justify-between border-b border-[#1f293d] pb-2.5">
-        <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 rounded-md bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center">
-            <Activity className="w-3.5 h-3.5 text-cyan-400" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-100">CONTOUR INSPECTOR</h3>
-            <p className="text-[10px] font-mono text-cyan-400">Selected Polyline ID: {contour.id}</p>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-slate-800 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
+    <DraggablePanel
+      id="contour-inspector"
+      title="CONTOUR INSPECTOR"
+      subtitle={`Elevation: ${contour.elevation} m`}
+      icon={<Activity className="w-4 h-4 text-cyan-400" />}
+      initialPosition={{ top: 80, right: 380 }}
+      width="320px"
+      onClose={onClose}
+      zIndex={950}
+    >
       {/* FEATURE 1: Elevation, Arc Length, Vertices */}
       <div className="space-y-2">
         <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-          Feature 1: Spatial Measurements
+          Spatial Measurements
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs font-mono">
           <div className="bg-[#0a0d14]/90 p-2.5 rounded-lg border border-[#1f293d]">
@@ -66,7 +57,7 @@ export const ContourInspector: React.FC<ContourInspectorProps> = ({ contour, onC
       {/* FEATURE 2: Enclosed Area Calculation */}
       <div className="space-y-2 border-t border-[#1f293d] pt-2.5">
         <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-          <span>Feature 2: Enclosed Area</span>
+          <span>Enclosed Area</span>
           {contour.is_closed ? (
             <span className="flex items-center space-x-1 text-emerald-400">
               <CheckCircle className="w-3 h-3" />
@@ -97,6 +88,6 @@ export const ContourInspector: React.FC<ContourInspectorProps> = ({ contour, onC
           </div>
         )}
       </div>
-    </div>
+    </DraggablePanel>
   );
 };

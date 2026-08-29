@@ -9,6 +9,7 @@ import {
   DemResponseData, ContourPolylineData, DropletPath, WatershedData,
   MapInteractionMode, SlopeResponseData, PondInfo,
   FlowVectorsData, StreamNetworkData, BasemapType, CandidateSite,
+  ContourAnalysisResponse,
 } from '../types/terrain';
 import { ContourLayer } from './ContourLayer';
 import { WaterDropletAnimation } from './WaterDropletAnimation';
@@ -64,8 +65,8 @@ const createCandidateIcon = (tier: string, rank: number, isRecommended: boolean)
 // ── Basemap tile configs ───────────────────────────────────────────
 const BASEMAPS = {
   osm: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a> | &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   },
   satellite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -140,6 +141,7 @@ interface TerrainMapProps {
   candidateSites: CandidateSite[];
   recommendedSite: CandidateSite | null;
   onCandidateClick?: (site: CandidateSite) => void;
+  kmlResult?: ContourAnalysisResponse | null;
 }
 
 export const TerrainMap: React.FC<TerrainMapProps> = ({
@@ -148,7 +150,7 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
   slopeData, dropletPath, watershed, pond, profileTransect,
   interactionMode, onAnalysisClick, watershedOutlet, layers,
   flowVectors, streamNetwork, basemap, candidateSites, recommendedSite,
-  onCandidateClick,
+  onCandidateClick, kmlResult,
 }) => {
   const initialCenter: [number, number] = [20.5937, 78.9629]; // Centre of India
 
@@ -324,6 +326,42 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
                 Est. Depth: {recommendedSite.estimated_depth_m} m<br />
                 Est. Volume: {recommendedSite.estimated_volume_m3.toLocaleString()} m³<br />
                 {recommendedSite.estimated_runoff_m3 && <>Est. Runoff: {recommendedSite.estimated_runoff_m3.toLocaleString()} m³</>}
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* ── Phase 2: KML Catchment Polygon ── */}
+        {kmlResult?.catchment && kmlResult.catchment.boundary.length >= 3 && (
+          <Polygon
+            positions={kmlResult.catchment.boundary.map(
+              (pt) => [pt[1], pt[0]] as [number, number]
+            )}
+            pathOptions={{
+              color: '#06b6d4',
+              weight: 3,
+              fillColor: '#0891b2',
+              fillOpacity: 0.35,
+              dashArray: '6, 4',
+            }}
+          />
+        )}
+
+        {/* ── Phase 2: KML Recommended Pond Site Marker ── */}
+        {kmlResult?.pond_site && (
+          <Marker
+            position={[kmlResult.pond_site.latitude, kmlResult.pond_site.longitude]}
+            icon={createCandidateIcon('Recommended', 1, true)}
+          >
+            <Popup>
+              <div style={{ fontFamily: 'monospace', fontSize: '12px', minWidth: '220px' }}>
+                <strong>⭐ KML POND SITE</strong><br />
+                Tier: <strong style={{ color: '#06b6d4' }}>{kmlResult.pond_site.suitability_tier}</strong><br />
+                Score: <strong>{kmlResult.pond_site.suitability_score.toFixed(1)}/100</strong><br />
+                Lat: {kmlResult.pond_site.latitude.toFixed(5)}°, Lng: {kmlResult.pond_site.longitude.toFixed(5)}°<br />
+                Elevation: {kmlResult.pond_site.elevation_m} m | Slope: {kmlResult.pond_site.slope_deg}°<br />
+                {kmlResult.catchment && <>Catchment: {kmlResult.catchment.area_km2.toFixed(3)} km²<br /></>}
+                <p style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8' }}>{kmlResult.pond_site.reason}</p>
               </div>
             </Popup>
           </Marker>

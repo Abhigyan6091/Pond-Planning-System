@@ -137,9 +137,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
       {/* Contour Interval */}
       <div className="flex items-center space-x-1 bg-[#0a0d14]/80 px-2 py-1 rounded-lg border border-[#1f293d] text-xs">
         <Activity className="w-3.5 h-3.5 text-emerald-400" />
-        {[10, 20, 50, 100].map((intv) => (
+        <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">Interval:</span>
+        {[1, 2, 5, 10, 20, 50].map((intv) => (
           <button key={intv} onClick={() => onContourIntervalChange(intv)}
-            className={`px-1.5 py-0.5 rounded text-[11px] font-mono ${contourInterval === intv ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-slate-200'}`}>
+            className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-medium transition-all ${contourInterval === intv ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
             {intv}m
           </button>
         ))}

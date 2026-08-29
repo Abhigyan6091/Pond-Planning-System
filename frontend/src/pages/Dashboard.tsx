@@ -4,6 +4,7 @@ import {
   DemResponseData, ContourPolylineData, SlopeResponseData, DropletPath,
   WatershedData, MapInteractionMode, PondInfo, ElevationProfileResponseData, Terrain3DData,
   FlowVectorsData, StreamNetworkData, BasemapType, RainfallData, CandidateSite, SuitabilityResponse,
+  ContourAnalysisResponse,
 } from '../types/terrain';
 import { TopToolbar } from '../components/TopToolbar';
 import { LeftSidebar } from '../components/LeftSidebar';
@@ -16,9 +17,11 @@ import { Terrain3DModal } from '../components/Terrain3DModal';
 import { RainfallPanel } from '../components/RainfallPanel';
 import { CandidateSitesPanel } from '../components/CandidateSitesPanel';
 import { RecommendationPanel } from '../components/RecommendationPanel';
+import { ContourUploadPanel } from '../components/ContourUploadPanel';
+import { DraggablePanel } from '../components/DraggablePanel';
 import { TerrainMap } from '../map/TerrainMap';
 import { demService } from '../services/api';
-import { Download, Trash2, Hexagon } from 'lucide-react';
+import { Download, Trash2, Hexagon, Map, Upload, Eye } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   // --- ROI / DEM state ---
@@ -33,7 +36,7 @@ export const Dashboard: React.FC = () => {
   const [demData, setDemData] = useState<DemResponseData | null>(null);
 
   // --- Phase 2: Contours ---
-  const [contourInterval, setContourInterval] = useState<number>(20.0);
+  const [contourInterval, setContourInterval] = useState<number>(5.0);
   const [contours, setContours] = useState<ContourPolylineData[]>([]);
   const [selectedContour, setSelectedContour] = useState<ContourPolylineData | null>(null);
 
@@ -64,6 +67,12 @@ export const Dashboard: React.FC = () => {
   const [suitabilityLoading, setSuitabilityLoading] = useState(false);
 
   const [analysisLoading, setAnalysisLoading] = useState(false);
+
+  // --- Phase 2: KML/KMZ terrain input ---
+  type TerrainInputMode = 'map' | 'upload';
+  const [terrainInputMode, setTerrainInputMode] = useState<TerrainInputMode>('map');
+  const [kmlResult, setKmlResult] = useState<ContourAnalysisResponse | null>(null);
+  const [isTerrainInputVisible, setIsTerrainInputVisible] = useState<boolean>(true);
 
   const [layers, setLayers] = useState<LayerVisibility>({
     contours: true,
@@ -488,6 +497,169 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
+      {/* ── Phase 2: Terrain Input Mode Switcher (Draggable & Minimizable) ── */}
+      {isTerrainInputVisible ? (
+        <DraggablePanel
+          id="terrain-input-panel"
+          title="TERRAIN INPUT"
+          subtitle={terrainInputMode === 'map' ? 'Satellite DEM Selection' : 'Upload Vector Contours'}
+          icon={terrainInputMode === 'map' ? <Map className="w-4 h-4 text-cyan-400" /> : <Upload className="w-4 h-4 text-emerald-400" />}
+          initialPosition={{ top: 80, right: 16 }}
+          width="320px"
+          onClose={() => setIsTerrainInputVisible(false)}
+          zIndex={930}
+        >
+          {/* Tab header */}
+          <div className="flex border-b border-[#1f293d] -mt-1 -mx-1 mb-2 bg-[#0a0d14]/60 rounded-lg p-0.5">
+            <button
+              id="tab-select-map"
+              onClick={() => setTerrainInputMode('map')}
+              className={`flex-1 flex items-center justify-center space-x-1.5 py-1.5 text-[11px] font-mono font-semibold rounded-md transition-all ${
+                terrainInputMode === 'map'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Map className="w-3.5 h-3.5" />
+              <span>Select from Map</span>
+            </button>
+            <button
+              id="tab-upload-contours"
+              onClick={() => setTerrainInputMode('upload')}
+              className={`flex-1 flex items-center justify-center space-x-1.5 py-1.5 text-[11px] font-mono font-semibold rounded-md transition-all ${
+                terrainInputMode === 'upload'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload Contours</span>
+            </button>
+          </div>
+
+          {/* Tab content */}
+          <div>
+            {terrainInputMode === 'map' ? (
+              <div className="space-y-2 text-[10px] font-mono text-slate-400 leading-relaxed bg-[#0a0d14]/60 p-2.5 rounded-lg border border-[#1f293d]">
+                <p>
+                  📍 Click anywhere on the map to set a location, choose your ROI mode (Point / Rect / Poly), then click{' '}
+                  <span className="text-cyan-400 font-semibold">Analyze Village</span> in the toolbar.
+                </p>
+                <p className="text-slate-500">
+                  Fetches real 30m Digital Elevation Models (GLO-30 / COP30 / SRTM) from OpenZenith & OpenTopography.
+                </p>
+              </div>
+            ) : (
+              <ContourUploadPanel
+                onAnalysisComplete={async (res) => {
+                  setKmlResult(res);
+                  // Pan map to pond site if available
+                  if (res.pond_site) {
+                    setSelectedPoint({ lat: res.pond_site.latitude, lng: res.pond_site.longitude });
+                  }
+                  // Synchronize full DEM state with application
+                  if (res.elevation_matrix && res.terrain && res.dem_id) {
+                    const reconstructedDem: DemResponseData = {
+                      success: true,
+                      message: `Reconstructed DEM from ${res.input?.filename || 'KML'}`,
+                      metadata: {
+                        dem_id: res.dem_id,
+                        bounds: {
+                          south: res.terrain.bounds.min_lat,
+                          west: res.terrain.bounds.min_lon,
+                          north: res.terrain.bounds.max_lat,
+                          east: res.terrain.bounds.max_lon,
+                        },
+                        width: res.terrain.grid_cols,
+                        height: res.terrain.grid_rows,
+                        min_elevation: res.terrain.min_elevation_m,
+                        max_elevation: res.terrain.max_elevation_m,
+                        mean_elevation: res.terrain.mean_elevation_m,
+                        std_elevation: 0,
+                        median_elevation: res.terrain.mean_elevation_m,
+                        pixel_size_m: res.terrain.pixel_size_m,
+                        crs: 'EPSG:4326',
+                        data_source: `KML Survey Contours (${res.input?.filename || 'Uploaded'})`,
+                        is_synthetic: false,
+                      },
+                      elevation_matrix: res.elevation_matrix,
+                      elevation_overlay_url: res.elevation_overlay_url || '',
+                      hillshade_overlay_url: res.hillshade_overlay_url || '',
+                      histogram: { counts: [], bins: [] },
+                    };
+                    setDemData(reconstructedDem);
+
+                    // Generate dense contours matching the survey on this DEM
+                    try {
+                      const cRes = await demService.generateContours(
+                        res.dem_id,
+                        res.elevation_matrix,
+                        reconstructedDem.metadata.bounds,
+                        contourInterval
+                      );
+                      setContours(cRes.contours);
+                    } catch (cErr) {
+                      console.error('Contour generation error on KML DEM:', cErr);
+                    }
+
+                    // Compute slope heatmap on KML DEM
+                    try {
+                      const sRes = await demService.computeSlope(
+                        res.dem_id,
+                        res.elevation_matrix,
+                        reconstructedDem.metadata.bounds,
+                        res.terrain.pixel_size_m
+                      );
+                      setSlopeData(sRes);
+                    } catch (sErr) {
+                      console.error('Slope error on KML DEM:', sErr);
+                    }
+
+                    // Stream network on KML DEM
+                    demService.fetchStreamNetwork(
+                      res.elevation_matrix,
+                      reconstructedDem.metadata.bounds,
+                      res.terrain.pixel_size_m,
+                      20
+                    ).then(setStreamNetwork).catch(console.error);
+
+                    // Populate Candidate Sites & Recommended Site
+                    if (res.candidates && res.candidates.length > 0) {
+                      setCandidateSites(res.candidates);
+                      setRecommendedSite(res.candidates[0]);
+                      setSelectedCandidate(res.candidates[0]);
+                    }
+
+                    // Populate Catchment
+                    if (res.catchment && res.pond_site) {
+                      setWatershed({
+                        success: true,
+                        outlet: { lat: res.pond_site.latitude, lng: res.pond_site.longitude },
+                        catchment_polygon: res.catchment.boundary,
+                        catchment_area_km2: res.catchment.area_km2,
+                        catchment_area_m2: res.catchment.area_m2,
+                        perimeter_km: res.catchment.perimeter_km,
+                        avg_slope_deg: res.catchment.avg_slope_deg,
+                      });
+                      setWatershedOutlet({ lat: res.pond_site.latitude, lng: res.pond_site.longitude });
+                    }
+                  }
+                }}
+                onClose={() => setKmlResult(null)}
+              />
+            )}
+          </div>
+        </DraggablePanel>
+      ) : (
+        <button
+          onClick={() => setIsTerrainInputVisible(true)}
+          className="absolute top-20 right-4 z-[900] bg-[#121824]/90 backdrop-blur-md border border-[#1f293d] hover:border-cyan-500/40 text-slate-300 hover:text-white px-3 py-2 rounded-xl text-xs font-mono font-semibold flex items-center space-x-2 shadow-xl transition-all"
+        >
+          <Upload className="w-4 h-4 text-cyan-400" />
+          <span>Show Terrain Input</span>
+        </button>
+      )}
+
       <TerrainMap
         selectedPoint={selectedPoint}
         onPointSelect={setSelectedPoint}
@@ -513,6 +685,7 @@ export const Dashboard: React.FC = () => {
         basemap={basemap}
         candidateSites={candidateSites}
         recommendedSite={recommendedSite}
+        kmlResult={kmlResult}
         onCandidateClick={(site) => {
           setSelectedCandidate(site);
           setSelectedPoint({ lat: site.lat, lng: site.lng });
