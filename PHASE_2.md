@@ -205,19 +205,26 @@ The candidate village pond location is derived dynamically from the reconstructe
 ### Evaluated Terrain Criteria
 Every grid cell is scored across four intrinsic terrain parameters:
 
-1. **Slope Steepness ($S_{\text{slope}}$)**: Ponds require flat or gently sloping terrain ($< 3^\circ$) to minimize earthwork excavation costs and embankment failure risks:
-   $$S_{\text{slope}} = \frac{1}{1 + \text{slope} / 8.0}$$
-2. **Natural Topographic Depression ($S_{\text{dep}}$)**: Sinks and valley troughs naturally collect water. Depressions are quantified using the Priority-Flood algorithm (Wang & Liu 2006), computing fill depth $\Delta z = z_{\text{filled}} - z_{\text{DEM}}$:
-   $$S_{\text{dep}} = \frac{\Delta z}{\max(\Delta z)}$$
-3. **Upstream Drainage Accumulation ($S_{\text{cat}}$)**: Ponds must receive sufficient runoff from upstream terrain:
-   $$S_{\text{cat}} = \frac{\ln(1 + A_{\text{cell}})}{\max(\ln(1 + A_{\text{cell}}))}$$
-4. **Low Elevation ($S_{\text{elev}}$)**: Natural gravity drainage directs surface flow to lower elevations:
-   $$S_{\text{elev}} = 1.0 - \frac{z - z_{\min}}{z_{\max} - z_{\min}}$$
+1. **Slope Steepness ($S_1$)**: Ponds require flat or gently sloping terrain ($< 3^\circ$) to minimize earthwork excavation costs and embankment failure risks:
+
+$$S_1 = \frac{1}{1 + \text{slope} / 8.0}$$
+
+2. **Natural Topographic Depression ($S_2$)**: Sinks and valley troughs naturally collect water. Depressions are quantified using the Priority-Flood algorithm (Wang & Liu 2006), computing fill depth $\Delta z = z_{\text{filled}} - z_{\text{DEM}}$:
+
+$$S_2 = \frac{\Delta z}{\max(\Delta z)}$$
+
+3. **Upstream Drainage Accumulation ($S_3$)**: Ponds must receive sufficient runoff from upstream terrain:
+
+$$S_3 = \frac{\ln(1 + A_{\text{cell}})}{\max(\ln(1 + A_{\text{cell}}))}$$
+
+4. **Low Elevation ($S_4$)**: Natural gravity drainage directs surface flow to lower elevations:
+
+$$S_4 = 1.0 - \frac{z - z_{\min}}{z_{\max} - z_{\min}}$$
 
 ### Composite Scoring & Spatial Filtering
 The normalized criteria are combined into a composite suitability score (0–100 scale):
 
-$$S_{\text{composite}} = 100 \times \left( w_1 S_{\text{slope}} + w_2 S_{\text{dep}} + w_3 S_{\text{cat}} + w_4 S_{\text{elev}} \right)$$
+$$S_{\text{composite}} = 100 \times \left( w_1 S_1 + w_2 S_2 + w_3 S_3 + w_4 S_4 \right)$$
 
 Cells near the outer boundary borders (within 2 pixels) are masked out to avoid edge artifacts. The highest-scoring local optimum is selected as the primary recommended pond site (`pond_site`), ensuring complete dynamic derivation with zero hardcoded assumptions.
 
@@ -262,10 +269,18 @@ To delineate the catchment for the identified pond site $(r_{\text{out}}, c_{\te
 4. Upon termination, all marked cells in $M$ constitute the exact contributing catchment.
 
 ### 4. Area, Perimeter, and Boundary Polygon Calculation
-- **Contributing Cell Count**: $N_{\text{cells}} = \sum_{r, c} M(r, c)$.
-- **Catchment Surface Area**:
-  $$\text{Area}_{\mathrm{m}^2} = N_{\text{cells}} \times (\Delta x)^2, \quad \text{Area}_{\mathrm{km}^2} = \frac{\text{Area}_{\mathrm{m}^2}}{1,000,000}$$
-- **Boundary Polygon**: Extracted by tracing the outer boundary contour of the binary mask $M$, converting grid coordinates to $(\text{latitude}, \text{longitude})$ tuples, and calculating geodesic boundary perimeter ($\text{km}$).
+
+The total count of contributing upstream raster cells $N$ is obtained by summing over the binary catchment mask $M$:
+
+$$N = \sum_{r, c} M(r, c)$$
+
+The total contributing catchment surface area is calculated by multiplying the cell count by the cell surface area $(\Delta x)^2$:
+
+$$\text{Area (in m}^2\text{)} = N \times (\Delta x)^2$$
+
+$$\text{Area (in km}^2\text{)} = \frac{N \times (\Delta x)^2}{1{,}000{,}000}$$
+
+- **Boundary Polygon**: Extracted by tracing the outer boundary contour of the binary mask $M$, converting grid coordinates to $(\text{latitude}, \text{longitude})$ tuples, and calculating geodesic boundary perimeter in kilometers.
 
 ---
 
