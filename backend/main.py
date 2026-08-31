@@ -28,6 +28,11 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 os.makedirs(settings.STORAGE_DIR, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=settings.STORAGE_DIR), name="storage")
 
+# Root level aliases for direct evaluation requests (/analyzeContour and /findCatchment)
+from backend.api.contour_analysis_routes import analyze_contour, find_catchment
+app.add_api_route("/analyzeContour", endpoint=analyze_contour, methods=["POST"], include_in_schema=False)
+app.add_api_route("/findCatchment", endpoint=find_catchment, methods=["POST"], include_in_schema=False)
+
 # Path to built React frontend
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 

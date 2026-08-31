@@ -280,8 +280,11 @@ cat server.log
 | `POST` | `/api/export/candidates/csv` | Downloads candidate pond sites as CSV |
 | `POST` | `/api/export/catchment/geojson` | Downloads watershed catchment boundary as GeoJSON |
 | `POST` | `/api/export/pond-sites/geojson` | Downloads candidate pond sites as GeoJSON Points |
-| `POST` | `/api/contour-analysis/analyzeContour` | **Phase 2**: Accepts KML/KMZ contour map, reconstructs DEM, identifies pond site & delineates catchment |
-| `POST` | `/api/contour-analysis/findCatchment` | **Phase 2**: Alias for `/analyzeContour` |
+| `POST` | `/api/analyzeContour` | **Phase 2 Primary Evaluation Route**: Accepts KML/KMZ contour map, reconstructs DEM, identifies pond site & delineates catchment |
+| `POST` | `/api/findCatchment` | **Phase 2 Evaluation Alias**: Same as `/api/analyzeContour` |
+| `POST` | `/api/contour-analysis/analyzeContour` | **Phase 2 Namespaced Route**: Same as `/api/analyzeContour` |
+| `POST` | `/api/contour-analysis/findCatchment` | **Phase 2 Namespaced Alias**: Same as `/api/analyzeContour` |
+| `GET` | `/api` | API Health & Status check |
 
 ---
 
@@ -291,10 +294,74 @@ The Village Pond Planning System provides a dual-input pipeline:
 1. **Select from Map**: Fetch live satellite DEMs from OpenTopography/OpenZenith for any clicked point or polygon ROI.
 2. **Upload Contours (KML/KMZ)**: Upload vector contour isolines (`.kml` or `.kmz`), dynamically reconstruct a continuous elevation raster (DEM) via Delaunay triangulation (`scipy.interpolate.LinearNDInterpolator`), and feed directly into the common D8 hydrology and suitability ranking engine.
 
-See [PHASE_2.md](PHASE_2.md) for full architectural documentation, mathematical formulation, and API specification.
+### Quick cURL Evaluation Command
+
+```bash
+# Upload and evaluate survey KML file on live server:
+curl -X POST "http://10.1.75.79:5240/api/analyzeContour" \
+  -H "accept: application/json" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@contours_1m.kml"
+```
+
+### Verified Sample Output (`contours_1m.kml`):
+
+```json
+{
+  "success": true,
+  "error_message": null,
+  "input": {
+    "filename": "contours_1m.kml",
+    "format": "KML",
+    "contour_count": 1355,
+    "elevation_min_m": 267.0,
+    "elevation_max_m": 298.0,
+    "contour_interval_m": 1.0
+  },
+  "terrain": {
+    "min_elevation_m": 268.91,
+    "max_elevation_m": 295.6,
+    "mean_elevation_m": 283.87,
+    "grid_rows": 100,
+    "grid_cols": 100,
+    "pixel_size_m": 33.67,
+    "bounds": {
+      "min_lat": 21.2393473,
+      "max_lat": 21.2640558,
+      "min_lon": 81.2807796,
+      "max_lon": 81.3132717
+    }
+  },
+  "pond_site": {
+    "latitude": 21.251826,
+    "longitude": 81.296533,
+    "elevation_m": 273.1,
+    "slope_deg": 0.9,
+    "flow_accumulation": 116,
+    "depression_depth_m": 8.9,
+    "suitability_score": 69.7,
+    "suitability_tier": "Highly Suitable",
+    "reason": "✓ Favorable terrain slope; ✓ Natural terrain depression; ✓ Good upstream catchment"
+  },
+  "catchment": {
+    "area_m2": 131505.6,
+    "area_km2": 0.132,
+    "perimeter_km": 1.85,
+    "avg_slope_deg": 2.7,
+    "contributing_cells": 116,
+    "boundary": [
+      [81.2944, 21.251452],
+      "..."
+    ]
+  }
+}
+```
+
+See [PHASE_2.md](PHASE_2.md) for full mathematical formulation, architectural diagrams, and comprehensive API documentation.
 
 ---
 
 ## 📜 Academic Disclaimer
 This software is designed as a **planning-level decision support system**. All runoff, storage volume, and suitability site estimates are computed using publicly available digital elevation models and climate reanalysis data. They are intended for preliminary screening and require field survey verification prior to engineering construction.
+
 
