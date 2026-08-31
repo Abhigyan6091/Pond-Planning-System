@@ -187,13 +187,15 @@ Itemized Points Breakdown out of 100:
 
 ---
 
-## 🚀 Quick Start (Local Setup)
+## 🚀 Quick Start & Deployment Modes
 
-### Prerequisites
+### Mode A: Local Development Setup
+
+#### Prerequisites
 - Python 3.10+
 - Node.js 18+
 
-### 1. Clone & Setup Backend
+#### 1. Setup Backend
 ```bash
 # Navigate to project root
 cd Contour
@@ -201,26 +203,57 @@ cd Contour
 # Install Python dependencies
 pip install -r backend/requirements.txt
 
-# Run automated tests
-python -m pytest backend/tests/ -v
-
-# Launch FastAPI server
-python -m uvicorn backend.main:app --port 8000 --reload
+# Launch FastAPI server (default: port 5000)
+python -m uvicorn backend.main:app --port 5000 --reload
 ```
-Backend API interactive docs available at: `http://localhost:8000/docs`
+Backend API interactive docs available at: `http://localhost:5000/docs`
 
-### 2. Setup & Launch Frontend
+#### 2. Setup & Launch Frontend (Vite Dev Server)
 ```bash
 cd frontend
 
 # Install Node dependencies
 npm install
 
-# Build production bundle (or run dev server)
-npm run build
+# Start Vite dev server
 npm run dev
 ```
 Open browser at: `http://localhost:3000`
+
+---
+
+### Mode B: IIT Bhilai Lab Server / Container Deployment (`10.1.75.79`)
+
+The system is deployed on the distributed lab container cluster (`stu40_sys4` node):
+
+| Parameter | Configuration |
+| :--- | :--- |
+| **Host IP** | `10.1.75.79` |
+| **SSH Access** | `ssh -p 2240 student@10.1.75.79` |
+| **Internal Container Port** | `5000` (FastAPI serving backend API + built React SPA) |
+| **External Campus Web Port** | **`5240`** (`http://10.1.75.79:5240/`) |
+| **Direct Web UI URL** | **`http://10.1.75.79:5240/`** (No password / No localhost needed) |
+| **Interactive API Docs** | **`http://10.1.75.79:5240/docs`** |
+
+#### Deployment & Execution on Lab Server:
+```bash
+# 1. SSH into the student container
+ssh -p 2240 student@10.1.75.79
+
+# 2. Navigate to project directory
+cd /home/student/Contour
+
+# 3. Install/verify Python packages in user space
+python3 -m pip install --user --break-system-packages -r backend/requirements.txt
+
+# 4. Start/Restart the daemon server on port 5000 (mapped to 5240 externally)
+export PYTHONPATH=/home/student/Contour:$PYTHONPATH
+pkill -f 'uvicorn backend.main:app' || true
+nohup python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 5000 > server.log 2>&1 &
+
+# 5. Check server status & logs
+cat server.log
+```
 
 ---
 

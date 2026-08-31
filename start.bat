@@ -5,8 +5,8 @@ echo   Launching TERRAIN ANALYZER (Backend + Frontend)
 echo ========================================================
 echo.
 
-echo Starting FastAPI Backend on http://localhost:8000 ...
-start "Terrain Analyzer Backend" cmd /k "python -m uvicorn backend.main:app --port 8000 --reload"
+echo Starting FastAPI Backend on http://localhost:5000 ...
+start "Terrain Analyzer Backend" cmd /k "python -m uvicorn backend.main:app --port 5000 --reload"
 
 echo Starting Vite React Frontend on http://localhost:3000 ...
 start "Terrain Analyzer Frontend" cmd /k "cd frontend && npm run dev"
