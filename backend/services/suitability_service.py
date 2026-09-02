@@ -439,25 +439,25 @@ class SuitabilityService:
         reasons: List[str] = []
 
         if scores.slope_score >= 0.6:
-            reasons.append("✓ Favorable terrain slope")
+            reasons.append("[OK] Favorable terrain slope")
         if scores.depression_score >= 0.4:
-            reasons.append("✓ Natural terrain depression")
+            reasons.append("[OK] Natural terrain depression")
         if scores.catchment_score >= 0.5:
-            reasons.append("✓ Good upstream catchment")
+            reasons.append("[OK] Good upstream catchment")
         if catchment_km2 >= 0.5:
-            reasons.append(f"✓ Catchment area {catchment_km2:.2f} km²")
+            reasons.append(f"[OK] Catchment area {catchment_km2:.2f} km²")
         if rainfall_mm >= 500:
-            reasons.append(f"✓ Adequate rainfall ({rainfall_mm:.0f} mm/yr)")
+            reasons.append(f"[OK] Adequate rainfall ({rainfall_mm:.0f} mm/yr)")
         if scores.elevation_score >= 0.5:
-            reasons.append("✓ Low-lying collection point")
+            reasons.append("[OK] Low-lying collection point")
 
         # Negative indicators
         if scores.slope_score < 0.3:
-            reasons.append("⚠ Steep terrain — excavation difficult")
+            reasons.append("[WARN] Steep terrain — excavation difficult")
         if scores.depression_score < 0.2:
-            reasons.append("⚠ Minimal natural depression")
+            reasons.append("[WARN] Minimal natural depression")
         if rainfall_mm > 0 and rainfall_mm < 350:
-            reasons.append("⚠ Low annual rainfall")
+            reasons.append("[WARN] Low annual rainfall")
 
         if composite >= 70:
             tier = "Recommended"
