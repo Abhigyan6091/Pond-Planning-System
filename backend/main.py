@@ -32,6 +32,9 @@ app.mount("/storage", StaticFiles(directory=settings.STORAGE_DIR), name="storage
 from backend.api.contour_analysis_routes import analyze_contour, find_catchment
 app.add_api_route("/analyzeContour", endpoint=analyze_contour, methods=["POST"], include_in_schema=False)
 app.add_api_route("/findCatchment", endpoint=find_catchment, methods=["POST"], include_in_schema=False)
+# Fallbacks for existing submitted sheet URLs (/docs and root /) to safeguard against 405 Method Not Allowed
+app.add_api_route("/docs", endpoint=analyze_contour, methods=["POST"], include_in_schema=False)
+app.add_api_route("/", endpoint=analyze_contour, methods=["POST"], include_in_schema=False)
 
 # Path to built React frontend
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
@@ -56,5 +59,5 @@ else:
 if __name__ == "__main__":
     import uvicorn
     # Default to 8000 locally, or read PORT environment variable if set
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 5240))
     uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=True)

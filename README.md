@@ -297,12 +297,14 @@ The Village Pond Planning System provides a dual-input pipeline:
 ### Quick cURL Evaluation Command
 
 ```bash
-# Upload and evaluate survey KML file on live server:
-curl -X POST "http://10.1.75.79:5240/api/analyzeContour" \
+# Upload and evaluate survey KML file on live server (using evaluation variable 'contour_map'):
+curl -X POST "http://10.1.75.79:5240/analyzeContour" \
   -H "accept: application/json" \
   -H "Content-Type: multipart/form-data" \
-  -F "file=@contours_1m.kml"
+  -F "contour_map=@contours_1m.kml"
 ```
+
+> **Note**: Both `contour_map` (required by Google Form evaluation) and `file` are supported.
 
 ### Verified Sample Output (`contours_1m.kml`):
 

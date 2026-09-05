@@ -357,18 +357,28 @@ and reverse BFS watershed delineation — the same engine used in Phase 1.
     },
 )
 async def analyze_contour(
-    file: UploadFile = File(
-        ...,
-        description="KML or KMZ contour map file",
-    )
+    contour_map: Optional[UploadFile] = File(
+        None,
+        description="KML or KMZ contour map file (Primary evaluation variable name)",
+    ),
+    file: Optional[UploadFile] = File(
+        None,
+        description="KML or KMZ contour map file (Compatibility alias)",
+    ),
 ):
     """
     **POST /api/contour-analysis/analyzeContour**
 
-    Accepts a KML or KMZ contour map, reconstructs terrain, and returns
-    pond site + catchment information derived from the uploaded file.
+    Accepts a KML or KMZ contour map under 'contour_map' or 'file', reconstructs terrain,
+    and returns pond site + catchment information derived from the uploaded file.
     """
-    return await _handle_contour_analysis(file)
+    upload = contour_map or file
+    if upload is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing contour map file. Please upload under form-data key 'contour_map' (or 'file').",
+        )
+    return await _handle_contour_analysis(upload)
 
 
 @router.post(
@@ -379,11 +389,24 @@ async def analyze_contour(
     include_in_schema=True,
 )
 async def find_catchment(
-    file: UploadFile = File(..., description="KML or KMZ contour map file"),
+    contour_map: Optional[UploadFile] = File(
+        None,
+        description="KML or KMZ contour map file (Primary evaluation variable name)",
+    ),
+    file: Optional[UploadFile] = File(
+        None,
+        description="KML or KMZ contour map file (Compatibility alias)",
+    ),
 ):
     """
     **POST /api/contour-analysis/findCatchment**
 
     Alias for `/api/contour-analysis/analyzeContour`.
     """
-    return await _handle_contour_analysis(file)
+    upload = contour_map or file
+    if upload is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing contour map file. Please upload under form-data key 'contour_map' (or 'file').",
+        )
+    return await _handle_contour_analysis(upload)

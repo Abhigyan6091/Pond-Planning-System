@@ -6,7 +6,7 @@ echo ========================================================
 echo.
 
 echo Starting FastAPI Backend on http://localhost:5000 ...
-start "Terrain Analyzer Backend" cmd /k "python -m uvicorn backend.main:app --port 5000 --reload"
+start "Terrain Analyzer Backend" cmd /k "python -m uvicorn backend.main:app --host 0.0.0.0 --port 5240 --reload"
 
 echo Starting Vite React Frontend on http://localhost:3000 ...
 start "Terrain Analyzer Frontend" cmd /k "cd frontend && npm run dev"
