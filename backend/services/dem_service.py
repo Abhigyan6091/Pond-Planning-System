@@ -52,9 +52,14 @@ OPENTOPODATA_SRTM30_URL = "https://api.opentopodata.org/v1/srtm30m"
 OPENTOPODATA_SRTM90_URL = "https://api.opentopodata.org/v1/srtm90m"
 OPENTOPODATA_ASTER_URL  = "https://api.opentopodata.org/v1/aster30m"
 BATCH_SIZE = 100          # OpenTopoData max points per request
-MAX_GRID_RES = 64         # Maximum DEM grid resolution
+MAX_GRID_RES = 100        # Maximum output DEM grid resolution
+# Public point APIs are rate limited. Fetch a smaller real grid and resample
+# for display/scoring instead of falling back to synthetic terrain.
+OPENTOPODATA_DIRECT_MAX_RES = 32
+OPENTOPODATA_FALLBACK_RES = 20
+OPENZENITH_DIRECT_MAX_RES = 40
 DEFAULT_TIMEOUT = 8.0     # Per-request HTTP timeout (s)
-RATE_DELAY = 0.25         # Seconds between OpenTopoData batch calls
+RATE_DELAY = 0.50         # Seconds between OpenTopoData batch calls
 
 
 class DemService:
@@ -68,7 +73,8 @@ class DemService:
 
     @classmethod
     def _dem_cache_key(
-        cls, south: float, west: float, north: float, east: float, res: int
+        cls, south: float, west: float, north: float, east: float, res: int,
+        provider: str = "auto", dem_type: str = "COP30",
     ) -> str:
         """
         Build an explicit, collision-free cache key.
@@ -82,12 +88,14 @@ class DemService:
         mixed in the cache.
         """
         has_key = "1" if settings.OPENTOPOGRAPHY_API_KEY else "0"
+        provider_sig = (provider or "auto").lower()
+        dem_type_sig = (dem_type or "COP30").upper()
         return (
             f"{round(south, 4)}_"
             f"{round(west,  4)}_"
             f"{round(north, 4)}_"
             f"{round(east,  4)}_"
-            f"{res}_k{has_key}"
+            f"{res}_{provider_sig}_{dem_type_sig}_k{has_key}"
         )
 
     # ─────────────────────────────────────────────────────
@@ -114,13 +122,17 @@ class DemService:
         res = max(20, min(int(request.resolution), MAX_GRID_RES))
 
         # 2. Fetch REAL elevation matrix (cache-first)
-        cache_key = cls._dem_cache_key(south, west, north, east, res)
+        cache_key = cls._dem_cache_key(
+            south, west, north, east, res, request.provider, request.dem_type
+        )
         if cache_key in cls._dem_cache:
             elev_matrix, source_label = cls._dem_cache[cache_key]
             elev_matrix = elev_matrix.copy()   # defensive copy – callers may mutate
             print(f"[DemService] Cache HIT ({cache_key}) | Source: {source_label}")
         else:
-            elev_matrix, source_label = cls._fetch_real_dem(south, west, north, east, res)
+            elev_matrix, source_label = cls._fetch_real_dem(
+                south, west, north, east, res, request.provider, request.dem_type
+            )
             cls._dem_cache[cache_key] = (elev_matrix.copy(), source_label)
             print(f"[DemService] Cache MISS – fetched via {source_label} | "
                   f"shape={elev_matrix.shape} | "
@@ -209,51 +221,108 @@ class DemService:
     # ─────────────────────────────────────────────────────
     @classmethod
     def _fetch_real_dem(
-        cls, south: float, west: float, north: float, east: float, res: int
+        cls, south: float, west: float, north: float, east: float, res: int,
+        provider: str = "auto", dem_type: str = "COP30",
     ) -> Tuple[np.ndarray, str]:
         """
-        Try each real elevation source in order. Return (array, source_label).
+        Try real elevation sources using the requested provider as preference.
+
+        Public point APIs can rate-limit large grids, so OpenTopoData/OpenZenith
+        are fetched at a capped real-data resolution and resampled to the
+        requested output grid. This keeps map analysis stable and avoids
+        silently selecting pond sites from synthetic fallback terrain.
         """
-        # ── 1a. OpenTopography official REST API (with API Key) ───────────
-        try:
-            res_ot = cls._fetch_opentopography_official(south, west, north, east, res)
-            if res_ot is not None:
-                arr, label = res_ot
-                return arr, label
-        except Exception as e:
-            print(f"[DemService] OpenTopography official API failed: {e}")
+        provider = (provider or "auto").lower()
+        if provider not in {"auto", "opentopography", "openzenith", "opentopodata"}:
+            provider = "auto"
 
-        # ── 1b. OpenZenith concurrent point grid ─────────────────────────
-        try:
-            arr = cls._fetch_openzenith_grid(south, west, north, east, res)
-            if arr is not None:
-                return arr, "OpenZenith GLO-30"
-        except Exception as e:
-            print(f"[DemService] OpenZenith grid failed: {e}")
+        preferred_order = {
+            "opentopography": ["opentopography", "opentopodata", "openzenith"],
+            "openzenith": ["openzenith", "opentopodata", "opentopography"],
+            "opentopodata": ["opentopodata", "opentopography", "openzenith"],
+            "auto": ["opentopography", "opentopodata", "openzenith"],
+        }[provider]
 
-        # ── 1c. OpenTopoData SRTM 30m batch ──────────────────────────────
+        for source in preferred_order:
+            if source == "opentopography":
+                try:
+                    res_ot = cls._fetch_opentopography_official(
+                        south, west, north, east, res, dem_type
+                    )
+                    if res_ot is not None:
+                        return res_ot
+                except Exception as e:
+                    print(f"[DemService] OpenTopography official API failed: {e}")
+
+            elif source == "opentopodata":
+                result = cls._try_opentopodata_sources(south, west, north, east, res)
+                if result is not None:
+                    return result
+
+            elif source == "openzenith":
+                try:
+                    fetch_res = min(res, OPENZENITH_DIRECT_MAX_RES)
+                    arr = cls._fetch_openzenith_grid(south, west, north, east, fetch_res)
+                    if arr is not None:
+                        if fetch_res != res:
+                            arr = cls._resample_grid(arr, res)
+                            return arr, f"OpenZenith GLO-30 (resampled from {fetch_res}x{fetch_res})"
+                        return arr, "OpenZenith GLO-30"
+                except Exception as e:
+                    print(f"[DemService] OpenZenith grid failed: {e}")
+
+        # Last resort remains explicit in metadata via is_synthetic=True.
+        print("[DemService] All network sources failed. Using geographic Perlin fallback.")
+        return cls._geographic_perlin_dem(south, west, north, east, res), "Perlin-fallback"
+
+    @classmethod
+    def _try_opentopodata_sources(
+        cls, south: float, west: float, north: float, east: float, res: int
+    ) -> Optional[Tuple[np.ndarray, str]]:
+        """Fetch OpenTopoData, downshifting public API calls when needed."""
+        direct_res = min(res, OPENTOPODATA_DIRECT_MAX_RES)
+        fallback_res = min(direct_res, OPENTOPODATA_FALLBACK_RES)
+
         for ds_url, label in [
             (OPENTOPODATA_SRTM30_URL, "SRTM-30m"),
             (OPENTOPODATA_ASTER_URL,  "ASTER-30m"),
             (OPENTOPODATA_SRTM90_URL, "SRTM-90m"),
         ]:
-            try:
-                arr = cls._fetch_opentopodata_grid(south, west, north, east, res, ds_url)
-                if arr is not None:
+            for fetch_res in dict.fromkeys([direct_res, fallback_res]):
+                try:
+                    arr = cls._fetch_opentopodata_grid(
+                        south, west, north, east, fetch_res, ds_url
+                    )
+                    if arr is None:
+                        continue
+                    if fetch_res != res:
+                        arr = cls._resample_grid(arr, res)
+                        return arr, f"OpenTopoData/{label} (resampled from {fetch_res}x{fetch_res})"
                     return arr, f"OpenTopoData/{label}"
-            except Exception as e:
-                print(f"[DemService] {label} failed: {e}")
+                except Exception as e:
+                    print(f"[DemService] {label} failed at {fetch_res}x{fetch_res}: {e}")
 
-        # ── 1d. Last resort – coordinate-seeded Perlin noise (no patterns) ─
-        print("[DemService] All network sources failed. Using geographic Perlin fallback.")
-        return cls._geographic_perlin_dem(south, west, north, east, res), "Perlin-fallback"
+        return None
+
+    @staticmethod
+    def _resample_grid(arr: np.ndarray, target_res: int) -> np.ndarray:
+        """Resample a square DEM grid to target_res while preserving real data range."""
+        if arr.shape == (target_res, target_res):
+            return arr.astype(np.float64, copy=False)
+        from scipy.ndimage import zoom
+
+        zoom_y = target_res / arr.shape[0]
+        zoom_x = target_res / arr.shape[1]
+        out = zoom(arr.astype(np.float64), (zoom_y, zoom_x), order=1)
+        return out[:target_res, :target_res]
 
     # ─────────────────────────────────────────────────────
     # OPENTOPOGRAPHY OFFICIAL API (COP30 / SRTMGL1)
     # ─────────────────────────────────────────────────────
     @classmethod
     def _fetch_opentopography_official(
-        cls, south: float, west: float, north: float, east: float, res: int
+        cls, south: float, west: float, north: float, east: float, res: int,
+        dem_type: str = "COP30",
     ) -> Optional[Tuple[np.ndarray, str]]:
         """
         Fetch high-res DEM raster directly from OpenTopography API using API Key.
@@ -263,10 +332,15 @@ class DemService:
         if not api_key:
             return None
 
-        # Try COP30 (Copernicus 30m) first, then SRTMGL1 (SRTM 30m)
-        for dem_type, label in [("COP30", "OpenTopography COP30"), ("SRTMGL1", "OpenTopography SRTMGL1")]:
+        # Try requested OpenTopography dataset first, then the supported fallback.
+        requested_type = (dem_type or "COP30").upper()
+        supported = [("COP30", "OpenTopography COP30"), ("SRTMGL1", "OpenTopography SRTMGL1")]
+        ordered = [item for item in supported if item[0] == requested_type]
+        ordered.extend(item for item in supported if item[0] != requested_type)
+
+        for current_dem_type, label in ordered:
             params = {
-                "demtype": dem_type,
+                "demtype": current_dem_type,
                 "south": f"{south:.6f}",
                 "north": f"{north:.6f}",
                 "west": f"{west:.6f}",
@@ -291,12 +365,12 @@ class DemService:
                                 data[data == nodata] = np.nan
                             data[data < -500] = np.nan
                             data = cls._fill_nans(data)
-                            print(f"[DemService] OpenTopography {dem_type} successfully fetched! shape={data.shape}")
+                            print(f"[DemService] OpenTopography {current_dem_type} successfully fetched! shape={data.shape}")
                             return data, label
                 else:
-                    print(f"[DemService] OpenTopography {dem_type} status: {r.status_code}, response: {r.text[:100]}")
+                    print(f"[DemService] OpenTopography {current_dem_type} status: {r.status_code}, response: {r.text[:100]}")
             except Exception as e:
-                print(f"[DemService] OpenTopography {dem_type} failed: {e}")
+                print(f"[DemService] OpenTopography {current_dem_type} failed: {e}")
 
         return None
 
