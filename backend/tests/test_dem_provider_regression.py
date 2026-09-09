@@ -1,10 +1,20 @@
 import numpy as np
+import pytest
 import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+from backend.config import settings
 from backend.models.dem_models import DemRequest, LatLng
 from backend.services.dem_service import DemService
+
+
+@pytest.fixture(autouse=True)
+def isolated_dem_storage(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "STORAGE_DIR", str(tmp_path))
+    DemService._dem_cache.clear()
+    yield
+    DemService._dem_cache.clear()
 
 
 def test_requested_opentopodata_provider_is_tried_before_openzenith(monkeypatch):
@@ -92,3 +102,33 @@ def test_high_resolution_opentopodata_uses_resampled_real_grid_instead_of_perlin
     assert "resampled" in label
     assert "Perlin" not in label
     assert 260.0 <= float(arr.min()) <= float(arr.max()) <= 261.0
+
+
+def test_identical_map_selection_reuses_persisted_real_dem_after_memory_cache_clear(monkeypatch):
+    responses = [
+        (np.full((20, 20), 111.0), "first-real-provider"),
+        (np.full((20, 20), 222.0), "changed-real-provider"),
+    ]
+
+    def fake_fetch_real_dem(cls, south, west, north, east, res, *args, **kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr(DemService, "_fetch_real_dem", classmethod(fake_fetch_real_dem))
+    DemService._dem_cache.clear()
+
+    request = DemRequest(
+        center=LatLng(lat=21.2588, lng=81.2954),
+        radius_km=2.0,
+        provider="opentopodata",
+        dem_type="COP30",
+        resolution=20,
+    )
+
+    first = DemService.process_dem_request(request)
+    DemService._dem_cache.clear()
+    second = DemService.process_dem_request(request)
+
+    assert first.metadata.data_source == "first-real-provider"
+    assert second.metadata.data_source == "first-real-provider"
+    assert second.elevation_matrix[0][0] == 111.0
+    assert len(responses) == 1

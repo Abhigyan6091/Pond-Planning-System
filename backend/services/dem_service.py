@@ -27,6 +27,7 @@ import os
 import uuid
 import math
 import time
+import hashlib
 import requests
 import numpy as np
 import rasterio
@@ -98,6 +99,45 @@ class DemService:
             f"{res}_{provider_sig}_{dem_type_sig}_k{has_key}"
         )
 
+    @classmethod
+    def _disk_cache_path(cls, cache_key: str) -> str:
+        cache_dir = os.path.join(settings.STORAGE_DIR, "dem_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
+        return os.path.join(cache_dir, f"{digest}.npz")
+
+    @classmethod
+    def _load_from_disk_cache(cls, cache_key: str) -> Optional[Tuple[np.ndarray, str]]:
+        path = cls._disk_cache_path(cache_key)
+        if not os.path.exists(path):
+            return None
+
+        try:
+            with np.load(path, allow_pickle=False) as cached:
+                elevation = cached["elevation"].astype(np.float64)
+                source_label = str(cached["source"].item())
+            return elevation, source_label
+        except Exception as e:
+            print(f"[DemService] Ignoring corrupt DEM disk cache {path}: {e}")
+            return None
+
+    @classmethod
+    def _save_to_disk_cache(
+        cls, cache_key: str, elev_matrix: np.ndarray, source_label: str
+    ) -> None:
+        if "Perlin" in source_label:
+            return
+
+        path = cls._disk_cache_path(cache_key)
+        try:
+            np.savez_compressed(
+                path,
+                elevation=elev_matrix.astype(np.float64, copy=False),
+                source=np.array(source_label),
+            )
+        except Exception as e:
+            print(f"[DemService] Could not persist DEM disk cache {path}: {e}")
+
     # ─────────────────────────────────────────────────────
     # PUBLIC ENTRY POINT
     # ─────────────────────────────────────────────────────
@@ -130,14 +170,20 @@ class DemService:
             elev_matrix = elev_matrix.copy()   # defensive copy – callers may mutate
             print(f"[DemService] Cache HIT ({cache_key}) | Source: {source_label}")
         else:
-            elev_matrix, source_label = cls._fetch_real_dem(
-                south, west, north, east, res, request.provider, request.dem_type
-            )
+            disk_cached = cls._load_from_disk_cache(cache_key)
+            if disk_cached is not None:
+                elev_matrix, source_label = disk_cached
+                print(f"[DemService] Disk cache HIT ({cache_key}) | Source: {source_label}")
+            else:
+                elev_matrix, source_label = cls._fetch_real_dem(
+                    south, west, north, east, res, request.provider, request.dem_type
+                )
+                cls._save_to_disk_cache(cache_key, elev_matrix, source_label)
+                print(f"[DemService] Cache MISS – fetched via {source_label} | "
+                      f"shape={elev_matrix.shape} | "
+                      f"range=[{elev_matrix.min():.1f}, {elev_matrix.max():.1f}]m | "
+                      f"std={elev_matrix.std():.1f}")
             cls._dem_cache[cache_key] = (elev_matrix.copy(), source_label)
-            print(f"[DemService] Cache MISS – fetched via {source_label} | "
-                  f"shape={elev_matrix.shape} | "
-                  f"range=[{elev_matrix.min():.1f}, {elev_matrix.max():.1f}]m | "
-                  f"std={elev_matrix.std():.1f}")
 
         # 3. Apply Polygon Mask (supports any number of vertices ≥ 3)
         if request.polygon and len(request.polygon.coordinates) >= 3:
@@ -642,4 +688,3 @@ class DemService:
         rgba[:, :, 3] = alpha
 
         Image.fromarray(rgba, mode='RGBA').save(save_path, "PNG")
-

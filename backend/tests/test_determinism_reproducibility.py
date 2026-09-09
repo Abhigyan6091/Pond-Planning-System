@@ -164,3 +164,43 @@ class TestHydrologicalChannelHandling:
         top = res.recommended
         assert top is not None
         assert top.depression_depth_m > 0.30, "Closed depression must have significant depth"
+
+    def test_candidates_are_not_selected_on_stream_corridor(self):
+        """
+        A visible river/stream corridor should be treated as a no-build zone,
+        including a small DEM-cell buffer around the inferred stream path.
+        """
+        rows, cols = 40, 40
+        stream_col = 20
+        dem = np.zeros((rows, cols), dtype=float)
+
+        for r in range(rows):
+            base_e = 260.0 - r * 2.0
+            for c in range(cols):
+                dem[r, c] = base_e + abs(c - stream_col) * 1.5
+
+        # Add two legitimate side depressions away from the stream corridor so
+        # the test still has good non-river alternatives to rank.
+        dem[10:14, 7:11] -= 12.0
+        dem[27:31, 29:33] -= 14.0
+        dem[:, stream_col] -= 4.0
+
+        bounds = BoundingBox(south=0.0, west=0.0, north=1.0, east=1.0)
+        req = SuitabilityRequest(
+            elevation_matrix=dem.tolist(),
+            bounds=bounds,
+            pixel_size_m=50.0,
+            num_candidates=8,
+            rainfall_mm=900.0,
+        )
+
+        res = SuitabilityService.analyze(req)
+        assert res.success
+        assert len(res.candidates) > 0
+
+        for cand in res.candidates:
+            col = round(cand.lng * (cols - 1))
+            assert abs(col - stream_col) > 2, (
+                f"Candidate rank {cand.rank} was selected inside stream buffer "
+                f"at col={col}, stream_col={stream_col}"
+            )
