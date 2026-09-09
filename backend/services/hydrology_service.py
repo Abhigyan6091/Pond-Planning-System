@@ -15,6 +15,8 @@ from backend.models.terrain_models import (
 from backend.utils.geo_utils import haversine_distance, calculate_polygon_area_m2
 
 class HydrologyService:
+    DEFAULT_STREAM_ACCUMULATION_THRESHOLD = 20
+
     # 8 Neighbor offsets: (dr, dc)
     # 0: E, 1: SE, 2: S, 3: SW, 4: W, 5: NW, 6: N, 7: NE
     D8_OFFSETS = [
@@ -103,6 +105,18 @@ class HydrologyService:
                     queue.append((nr, nc))
 
         return accumulation
+
+    @staticmethod
+    def resolve_stream_accumulation_threshold(
+        accumulation: np.ndarray,
+        requested_threshold: int = DEFAULT_STREAM_ACCUMULATION_THRESHOLD,
+    ) -> int:
+        max_acc = int(np.max(accumulation))
+        threshold = int(requested_threshold)
+
+        if threshold <= 0 or threshold >= max_acc:
+            return max(3, int(max_acc * 0.08))
+        return min(threshold, max(3, int(max_acc * 0.15)))
 
     @classmethod
     def trace_droplet_path(cls, request: FlowDropletRequest) -> FlowDropletResponse:
@@ -342,12 +356,7 @@ class HydrologyService:
         flow_dir = cls.compute_d8_flow_direction(elev_matrix, request.pixel_size_m)
         accumulation = cls.compute_flow_accumulation(flow_dir)
 
-        max_acc = int(np.max(accumulation))
-        # Dynamically scale threshold relative to grid size and max accumulation
-        if threshold <= 0 or threshold >= max_acc:
-            threshold = max(3, int(max_acc * 0.08))
-        else:
-            threshold = min(threshold, max(3, int(max_acc * 0.15)))
+        threshold = cls.resolve_stream_accumulation_threshold(accumulation, threshold)
 
         # Stream mask: cells with enough upstream flow
         stream_mask = accumulation >= threshold

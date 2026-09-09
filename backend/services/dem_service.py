@@ -61,6 +61,7 @@ OPENTOPODATA_FALLBACK_RES = 20
 OPENZENITH_DIRECT_MAX_RES = 40
 DEFAULT_TIMEOUT = 8.0     # Per-request HTTP timeout (s)
 RATE_DELAY = 0.50         # Seconds between OpenTopoData batch calls
+CENTER_SNAP_M = 1000.0    # Stabilize village/map analysis against tiny centre drags
 
 
 class DemService:
@@ -98,6 +99,17 @@ class DemService:
             f"{round(east,  4)}_"
             f"{res}_{provider_sig}_{dem_type_sig}_k{has_key}"
         )
+
+    @staticmethod
+    def _snap_center_to_analysis_grid(lat: float, lng: float) -> Tuple[float, float]:
+        lat_step = CENTER_SNAP_M / 111000.0
+        snapped_lat = round(lat / lat_step) * lat_step
+
+        lon_m_per_deg = 111000.0 * max(0.01, math.cos(math.radians(snapped_lat)))
+        lon_step = CENTER_SNAP_M / lon_m_per_deg
+        snapped_lng = round(lng / lon_step) * lon_step
+
+        return snapped_lat, snapped_lng
 
     @classmethod
     def _disk_cache_path(cls, cache_key: str) -> str:
@@ -153,8 +165,11 @@ class DemService:
                                         request.bbox.north, request.bbox.east)
         elif request.center:
             radius = request.radius_km if request.radius_km else 2.0
+            center_lat, center_lng = cls._snap_center_to_analysis_grid(
+                request.center.lat, request.center.lng
+            )
             south, west, north, east = latlng_to_bbox(
-                request.center.lat, request.center.lng, radius
+                center_lat, center_lng, radius
             )
         else:
             south, west, north, east = 27.95, 86.87, 28.03, 86.97

@@ -80,7 +80,7 @@ class StreamNetworkRequest(BaseModel):
     elevation_matrix: List[List[float]]
     bounds: BoundingBox
     pixel_size_m: float
-    accumulation_threshold: int = 50  # Cells needed upstream to count as stream
+    accumulation_threshold: int = 20  # Cells needed upstream to count as stream
 
 
 class StreamSegment(BaseModel):

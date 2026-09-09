@@ -132,3 +132,33 @@ def test_identical_map_selection_reuses_persisted_real_dem_after_memory_cache_cl
     assert second.metadata.data_source == "first-real-provider"
     assert second.elevation_matrix[0][0] == 111.0
     assert len(responses) == 1
+
+
+def test_small_center_jitter_reuses_same_canonical_analysis_window(monkeypatch):
+    calls = []
+
+    def fake_fetch_real_dem(cls, south, west, north, east, res, *args, **kwargs):
+        calls.append((south, west, north, east, res))
+        return np.full((res, res), 333.0), f"fake-real-dem-{len(calls)}"
+
+    monkeypatch.setattr(DemService, "_fetch_real_dem", classmethod(fake_fetch_real_dem))
+
+    first = DemService.process_dem_request(DemRequest(
+        center=LatLng(lat=21.258800, lng=81.295400),
+        radius_km=2.0,
+        provider="opentopodata",
+        dem_type="COP30",
+        resolution=100,
+    ))
+    second = DemService.process_dem_request(DemRequest(
+        center=LatLng(lat=21.259300, lng=81.295900),
+        radius_km=2.0,
+        provider="opentopodata",
+        dem_type="COP30",
+        resolution=100,
+    ))
+
+    assert len(calls) == 1
+    assert first.metadata.bounds == second.metadata.bounds
+    assert first.metadata.data_source == second.metadata.data_source
+    assert first.elevation_matrix == second.elevation_matrix

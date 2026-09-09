@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from backend.models.dem_models import DemRequest, BoundingBox, LatLng
 from backend.models.suitability_models import SuitabilityRequest
 from backend.services.dem_service import DemService
+from backend.services.hydrology_service import HydrologyService
 from backend.services.suitability_service import SuitabilityService
 
 
@@ -203,4 +204,46 @@ class TestHydrologicalChannelHandling:
             assert abs(col - stream_col) > 2, (
                 f"Candidate rank {cand.rank} was selected inside stream buffer "
                 f"at col={col}, stream_col={stream_col}"
+            )
+
+    def test_candidates_do_not_overlap_rendered_stream_network(self):
+        """
+        Suitability candidates must not be placed on cells that the hydrology
+        overlay renders as a stream for the village-analysis threshold.
+        """
+        rows, cols = 100, 100
+        stream_col = 50
+        dem = np.zeros((rows, cols), dtype=float)
+
+        for r in range(rows):
+            base_e = 300.0 - r * 1.0
+            for c in range(cols):
+                dem[r, c] = base_e + abs(c - stream_col) * 0.3
+
+        dem[:, stream_col] -= 2.0
+
+        bounds = BoundingBox(south=0.0, west=0.0, north=1.0, east=1.0)
+        req = SuitabilityRequest(
+            elevation_matrix=dem.tolist(),
+            bounds=bounds,
+            pixel_size_m=40.0,
+            num_candidates=10,
+            rainfall_mm=900.0,
+        )
+
+        res = SuitabilityService.analyze(req)
+        assert res.success
+        assert len(res.candidates) > 0
+
+        flow_dir = HydrologyService.compute_d8_flow_direction(dem, 40.0)
+        accumulation = HydrologyService.compute_flow_accumulation(flow_dir)
+        max_acc = int(np.max(accumulation))
+        rendered_threshold = min(20, max(3, int(max_acc * 0.15)))
+
+        for cand in res.candidates:
+            row = round((1.0 - cand.lat) * (rows - 1))
+            col = round(cand.lng * (cols - 1))
+            assert accumulation[row, col] < rendered_threshold, (
+                f"Candidate rank {cand.rank} overlaps rendered stream network "
+                f"at row={row}, col={col}, accumulation={accumulation[row, col]}"
             )

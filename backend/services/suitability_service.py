@@ -84,7 +84,7 @@ RAIN_REF   = 800.0  # mm/yr  — rainfall above this scores maximum
 #      (i.e. the fill algorithm cannot form a closed basin above it)
 CHANNEL_ACC_FRAC      = 0.05   # top 5% of flow-accumulation values
 CHANNEL_DEP_THRESHOLD = 0.30   # metres — must have at least 30 cm closed depression to NOT be a channel
-STREAM_ACC_FRAC       = 0.005  # stream core begins at 0.5% of ROI cells draining through a point
+STREAM_RENDER_THRESHOLD = HydrologyService.DEFAULT_STREAM_ACCUMULATION_THRESHOLD
 STREAM_BUFFER_CELLS   = 2      # exclude cells immediately adjacent to inferred stream centreline
 
 
@@ -129,7 +129,10 @@ class SuitabilityService:
         # Rivers and streams occupy corridors, not just the single highest-flow
         # D8 centreline cell. Use a stricter flow-accumulation core with a small
         # cell buffer so candidates cannot land on the visible watercourse edge.
-        stream_acc_threshold = max(5, int(math.ceil(rows * cols * STREAM_ACC_FRAC)))
+        stream_acc_threshold = HydrologyService.resolve_stream_accumulation_threshold(
+            flow_acc,
+            STREAM_RENDER_THRESHOLD,
+        )
         stream_core = (flow_acc >= stream_acc_threshold) & has_outflow & lacks_depression
         stream_corridor_mask = binary_dilation(
             stream_core,
