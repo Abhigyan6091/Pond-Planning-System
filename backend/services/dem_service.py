@@ -341,27 +341,25 @@ class DemService:
         cls, south: float, west: float, north: float, east: float, res: int
     ) -> Optional[Tuple[np.ndarray, str]]:
         """Fetch OpenTopoData, downshifting public API calls when needed."""
-        direct_res = min(res, OPENTOPODATA_DIRECT_MAX_RES)
-        fallback_res = min(direct_res, OPENTOPODATA_FALLBACK_RES)
+        fetch_res = min(res, OPENTOPODATA_FALLBACK_RES)
 
         for ds_url, label in [
             (OPENTOPODATA_SRTM30_URL, "SRTM-30m"),
-            (OPENTOPODATA_ASTER_URL,  "ASTER-30m"),
             (OPENTOPODATA_SRTM90_URL, "SRTM-90m"),
+            (OPENTOPODATA_ASTER_URL,  "ASTER-30m"),
         ]:
-            for fetch_res in dict.fromkeys([direct_res, fallback_res]):
-                try:
-                    arr = cls._fetch_opentopodata_grid(
-                        south, west, north, east, fetch_res, ds_url
-                    )
-                    if arr is None:
-                        continue
-                    if fetch_res != res:
-                        arr = cls._resample_grid(arr, res)
-                        return arr, f"OpenTopoData/{label} (resampled from {fetch_res}x{fetch_res})"
-                    return arr, f"OpenTopoData/{label}"
-                except Exception as e:
-                    print(f"[DemService] {label} failed at {fetch_res}x{fetch_res}: {e}")
+            try:
+                arr = cls._fetch_opentopodata_grid(
+                    south, west, north, east, fetch_res, ds_url
+                )
+                if arr is None:
+                    continue
+                if fetch_res != res:
+                    arr = cls._resample_grid(arr, res)
+                    return arr, f"OpenTopoData/{label} (resampled from {fetch_res}x{fetch_res})"
+                return arr, f"OpenTopoData/{label}"
+            except Exception as e:
+                print(f"[DemService] {label} failed at {fetch_res}x{fetch_res}: {e}")
 
         return None
 
@@ -446,6 +444,21 @@ class DemService:
         Fetch a res×res grid from OpenZenith /api/elevation using a thread pool.
         Returns None if more than 10 % of points fail.
         """
+        # Fast pre-flight check to see if OpenZenith endpoint is online and accessible
+        try:
+            probe_url = f"{OPENZENITH_URL}?lat={north:.6f}&lon={west:.6f}"
+            r = requests.get(probe_url, headers={"User-Agent": "ContourAnalyzer/1.0"}, timeout=2.5)
+            if r.status_code != 200:
+                print(f"[DemService] OpenZenith pre-flight probe returned HTTP {r.status_code} – skipping provider")
+                return None
+            probe_data = r.json()
+            if not isinstance(probe_data, dict) or probe_data.get("elevation") is None:
+                print("[DemService] OpenZenith pre-flight probe returned non-elevation response – skipping provider")
+                return None
+        except Exception as e:
+            print(f"[DemService] OpenZenith pre-flight probe failed ({e}) – skipping provider")
+            return None
+
         lats = np.linspace(north, south, res)
         lons = np.linspace(west, east, res)
         LonG, LatG = np.meshgrid(lons, lats)
@@ -457,7 +470,7 @@ class DemService:
         def fetch_one(idx: int, lat: float, lon: float) -> Tuple[int, Optional[float]]:
             url = f"{OPENZENITH_URL}?lat={lat:.6f}&lon={lon:.6f}"
             try:
-                r = requests.get(url, timeout=DEFAULT_TIMEOUT)
+                r = requests.get(url, headers={"User-Agent": "ContourAnalyzer/1.0"}, timeout=DEFAULT_TIMEOUT)
                 if r.status_code == 200:
                     data = r.json()
                     elev = data.get("elevation")
@@ -468,12 +481,19 @@ class DemService:
             return idx, None
 
         # Use thread pool – max 12 concurrent OpenZenith requests
+        failed_count = 0
         with ThreadPoolExecutor(max_workers=12) as pool:
             futures = {pool.submit(fetch_one, i, lat, lon): i
                        for i, (lat, lon) in enumerate(coords)}
             for future in as_completed(futures):
                 idx, elev = future.result()
                 results[idx] = elev
+                if elev is None:
+                    failed_count += 1
+                    if failed_count > n_pts * 0.10:
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        print(f"[DemService] OpenZenith: >10% points failed early ({failed_count}/{n_pts}) – aborting")
+                        return None
 
         elevs = [results.get(i) for i in range(n_pts)]
         none_count = sum(1 for e in elevs if e is None)
@@ -513,7 +533,7 @@ class DemService:
             loc_str = "|".join([f"{la:.6f},{lo:.6f}" for la, lo in zip(batch_la, batch_lo)])
             url = f"{ds_url}?locations={loc_str}"
             try:
-                r = requests.get(url, timeout=15)
+                r = requests.get(url, headers={"User-Agent": "ContourAnalyzer/1.0"}, timeout=10)
                 if r.status_code == 200:
                     data = r.json()
                     for pt in data.get("results", []):

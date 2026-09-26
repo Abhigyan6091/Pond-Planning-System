@@ -261,3 +261,44 @@ class TestSuitabilityScoring:
         for site in result.candidates:
             assert site.suitability_tier in valid_tiers, \
                 f"Invalid tier: {site.suitability_tier}"
+
+    def test_candidates_excluded_from_river_and_buffer_corridor(self):
+        """
+        Pond candidate sites must NEVER be placed in a river channel, water body,
+        or within its buffer zone, even if DEM noise or obstacles produce a deep filled depression.
+        """
+        rows, cols = 50, 50
+        river_col = 25
+        dem = np.zeros((rows, cols), dtype=float)
+        for r in range(rows):
+            base_e = 300.0 - r * 1.5
+            for c in range(cols):
+                dem[r, c] = base_e + abs(c - river_col) * 2.0
+
+        # Carve a wide river bed with localized deep depression pools
+        dem[:, river_col - 1:river_col + 2] -= 8.0
+        # Simulated DEM bridge/obstruction artifact causing 6m depression depth along the river
+        dem[30:33, river_col - 1:river_col + 2] += 4.0
+
+        # Place legitimate off-river candidate depressions on the sides
+        dem[15:20, 8:12] -= 6.0
+        dem[35:40, 38:42] -= 6.0
+
+        req = SuitabilityRequest(
+            elevation_matrix=dem.tolist(),
+            bounds=BoundingBox(south=21.0, west=81.0, north=21.1, east=81.1),
+            pixel_size_m=40.0,
+            num_candidates=6,
+            rainfall_mm=800.0,
+        )
+        res = SuitabilityService.analyze(req)
+        assert res.success
+        assert len(res.candidates) > 0
+
+        # Verify that NO candidate is placed within the river or its 75m buffer (~2-3 cells)
+        for site in res.candidates:
+            c_col = int(round((site.lng - 81.0) / 0.1 * (cols - 1)))
+            assert abs(c_col - river_col) > 3, (
+                f"Candidate #{site.rank} at col={c_col} was placed within river corridor (river_col={river_col})"
+            )
+

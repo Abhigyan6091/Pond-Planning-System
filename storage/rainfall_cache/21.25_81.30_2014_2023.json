@@ -1,0 +1,132 @@
+{
+  "success": true,
+  "message": "Regional climatological baseline for 2014–2023 (Open-Meteo archive rate-limited).",
+  "lat": 21.247443,
+  "lng": 81.298313,
+  "start_year": 2014,
+  "end_year": 2023,
+  "annual_avg_mm": 1066.0,
+  "annual_max_mm": 1209.6,
+  "annual_min_mm": 928.8,
+  "monsoon_avg_mm": 906.2,
+  "monsoon_fraction": 0.85,
+  "monthly_avg": [
+    {
+      "month": 1,
+      "month_name": "January",
+      "avg_mm": 12.8,
+      "total_mm": 128.0
+    },
+    {
+      "month": 2,
+      "month_name": "February",
+      "avg_mm": 16.0,
+      "total_mm": 160.0
+    },
+    {
+      "month": 3,
+      "month_name": "March",
+      "avg_mm": 19.2,
+      "total_mm": 192.0
+    },
+    {
+      "month": 4,
+      "month_name": "April",
+      "avg_mm": 26.7,
+      "total_mm": 267.0
+    },
+    {
+      "month": 5,
+      "month_name": "May",
+      "avg_mm": 42.6,
+      "total_mm": 426.0
+    },
+    {
+      "month": 6,
+      "month_name": "June",
+      "avg_mm": 170.6,
+      "total_mm": 1706.0
+    },
+    {
+      "month": 7,
+      "month_name": "July",
+      "avg_mm": 330.5,
+      "total_mm": 3305.0
+    },
+    {
+      "month": 8,
+      "month_name": "August",
+      "avg_mm": 277.2,
+      "total_mm": 2772.0
+    },
+    {
+      "month": 9,
+      "month_name": "September",
+      "avg_mm": 127.9,
+      "total_mm": 1279.0
+    },
+    {
+      "month": 10,
+      "month_name": "October",
+      "avg_mm": 32.0,
+      "total_mm": 320.0
+    },
+    {
+      "month": 11,
+      "month_name": "November",
+      "avg_mm": 8.5,
+      "total_mm": 85.0
+    },
+    {
+      "month": 12,
+      "month_name": "December",
+      "avg_mm": 2.1,
+      "total_mm": 21.0
+    }
+  ],
+  "yearly_totals": [
+    {
+      "year": 2014,
+      "annual_total_mm": 1209.6
+    },
+    {
+      "year": 2015,
+      "annual_total_mm": 939.6
+    },
+    {
+      "year": 2016,
+      "annual_total_mm": 1004.4
+    },
+    {
+      "year": 2017,
+      "annual_total_mm": 1069.2
+    },
+    {
+      "year": 2018,
+      "annual_total_mm": 1134.0
+    },
+    {
+      "year": 2019,
+      "annual_total_mm": 1198.8
+    },
+    {
+      "year": 2020,
+      "annual_total_mm": 928.8
+    },
+    {
+      "year": 2021,
+      "annual_total_mm": 993.6
+    },
+    {
+      "year": 2022,
+      "annual_total_mm": 1058.4
+    },
+    {
+      "year": 2023,
+      "annual_total_mm": 1123.2
+    }
+  ],
+  "max_rainfall_year": 2014,
+  "data_source": "Regional Climatology (Open-Meteo Fallback)",
+  "rainfall_class": "Humid"
+}

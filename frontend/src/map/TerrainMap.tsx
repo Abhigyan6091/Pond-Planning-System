@@ -205,7 +205,8 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
         {/* DEM Elevation Overlay */}
         {demData && layers.demOverlay && (
           <ImageOverlay
-            url={demData.elevation_overlay_url}
+            key={`dem-elev-${demData.metadata.dem_id}`}
+            url={`${demData.elevation_overlay_url}?v=${demData.metadata.dem_id}`}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
             opacity={basemap === 'satellite' ? 0.55 : 0.72}
           />
@@ -214,7 +215,8 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
         {/* Hillshade */}
         {demData && layers.hillshade && (
           <ImageOverlay
-            url={demData.hillshade_overlay_url}
+            key={`dem-hill-${demData.metadata.dem_id}`}
+            url={`${demData.hillshade_overlay_url}?v=${demData.metadata.dem_id}`}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
             opacity={0.75}
           />
@@ -223,7 +225,8 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
         {/* Slope Heatmap */}
         {slopeData && layers.slopeHeatmap && demData && (
           <ImageOverlay
-            url={slopeData.slope_heatmap_url}
+            key={`dem-slope-${demData.metadata.dem_id}`}
+            url={`${slopeData.slope_heatmap_url}?v=${demData.metadata.dem_id}`}
             bounds={[[demData.metadata.bounds.south, demData.metadata.bounds.west], [demData.metadata.bounds.north, demData.metadata.bounds.east]]}
             opacity={0.68}
           />

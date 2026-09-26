@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CloudRain, TrendingUp, Calendar, Droplets, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { RainfallData } from '../types/terrain';
+import { DraggablePanel } from './DraggablePanel';
 
 interface RainfallPanelProps {
   rainfall: RainfallData | null;
@@ -10,13 +11,13 @@ interface RainfallPanelProps {
 
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-const CLASS_COLOR: Record<string, string> = {
-  'Arid': 'text-red-400',
-  'Semi-Arid': 'text-orange-400',
-  'Sub-Humid': 'text-yellow-400',
-  'Humid': 'text-emerald-400',
-  'Very Humid': 'text-cyan-400',
-  'Unknown': 'text-slate-400',
+const CLASS_BADGE_STYLE: Record<string, string> = {
+  'Arid': 'text-red-400 border-red-500/30 bg-red-950/30',
+  'Semi-Arid': 'text-orange-400 border-orange-500/30 bg-orange-950/30',
+  'Sub-Humid': 'text-yellow-400 border-yellow-500/30 bg-yellow-950/30',
+  'Humid': 'text-emerald-400 border-emerald-500/30 bg-emerald-950/30',
+  'Very Humid': 'text-cyan-400 border-cyan-500/30 bg-cyan-950/30',
+  'Unknown': 'text-slate-400 border-slate-500/30 bg-slate-950/30',
 };
 
 export const RainfallPanel: React.FC<RainfallPanelProps> = ({ rainfall, isLoading, onClose }) => {
@@ -24,31 +25,46 @@ export const RainfallPanel: React.FC<RainfallPanelProps> = ({ rainfall, isLoadin
 
   if (isLoading) {
     return (
-      <div className="absolute bottom-6 left-72 z-[900] w-80 bg-[#121824]/95 backdrop-blur-md border border-[#1f293d] rounded-xl p-4 shadow-2xl">
-        <div className="flex items-center space-x-3">
+      <DraggablePanel
+        id="rainfall-panel-loading"
+        title="RAINFALL ANALYSIS"
+        icon={<CloudRain className="w-4 h-4 text-cyan-400" />}
+        initialPosition={{ bottom: 24, left: 300 }}
+        width="320px"
+        onClose={onClose}
+        zIndex={915}
+      >
+        <div className="flex items-center space-x-3 p-3">
           <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-slate-300">Fetching rainfall from Open-Meteo...</span>
         </div>
-      </div>
+      </DraggablePanel>
     );
   }
 
   if (!rainfall) return null;
 
   const maxMonthly = Math.max(...(rainfall.monthly_avg?.map(m => m.avg_mm) ?? [1]), 1);
-  const classColor = CLASS_COLOR[rainfall.rainfall_class] || 'text-slate-400';
+  const badgeStyle = CLASS_BADGE_STYLE[rainfall.rainfall_class] || 'text-slate-400 border-slate-500/30 bg-slate-950/30';
 
   return (
-    <div className="absolute bottom-6 left-72 z-[900] w-84 bg-[#121824]/95 backdrop-blur-md border border-[#1f293d] rounded-xl shadow-2xl overflow-hidden" style={{ width: '320px' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#1f293d]">
-        <div className="flex items-center space-x-2">
-          <CloudRain className="w-4 h-4 text-cyan-400" />
-          <span className="text-xs font-semibold text-slate-200">RAINFALL ANALYSIS</span>
-        </div>
-        <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xs">✕</button>
-      </div>
-
+    <DraggablePanel
+      id="rainfall-panel"
+      title="RAINFALL ANALYSIS"
+      subtitle={`${rainfall.data_source} · ${rainfall.start_year}–${rainfall.end_year}`}
+      icon={<CloudRain className="w-4 h-4 text-cyan-400" />}
+      headerBadge={
+        rainfall.success && rainfall.rainfall_class ? (
+          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${badgeStyle}`}>
+            {rainfall.rainfall_class}
+          </span>
+        ) : undefined
+      }
+      initialPosition={{ bottom: 24, left: 300 }}
+      width="340px"
+      onClose={onClose}
+      zIndex={915}
+    >
       <div className="p-3 space-y-3">
         {/* Source attribution */}
         <div className="text-[10px] font-mono text-slate-500 flex items-center space-x-1">
@@ -62,12 +78,6 @@ export const RainfallPanel: React.FC<RainfallPanelProps> = ({ rainfall, isLoadin
           </div>
         ) : (
           <>
-            {/* Climate class badge */}
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider">Climate Class</span>
-              <span className={`text-xs font-bold font-mono ${classColor}`}>{rainfall.rainfall_class}</span>
-            </div>
-
             {/* Key stats grid */}
             <div className="grid grid-cols-2 gap-1.5 text-xs font-mono">
               {[
@@ -139,6 +149,7 @@ export const RainfallPanel: React.FC<RainfallPanelProps> = ({ rainfall, isLoadin
           </>
         )}
       </div>
-    </div>
+    </DraggablePanel>
   );
 };
+

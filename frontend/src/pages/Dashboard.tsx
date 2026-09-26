@@ -95,9 +95,13 @@ export const Dashboard: React.FC = () => {
     recommendedSite: true,
   });
 
-  // Bounding box displayed on the map preview is derived from villageCenter so
-  // the user always sees the region that "Analyze Village" will actually analyse.
+  // Bounding box displayed on the map preview:
+  // When DEM is loaded, use the exact DEM bounds so overlays and boundaries align 100%.
+  // Prior to analysis, derive from villageCenter so the user previews the target area.
   const computedBbox: BoundingBox | null = useMemo(() => {
+    if (demData) {
+      return demData.metadata.bounds;
+    }
     if (!villageCenter) return null;
     const latDelta = radiusKm / 111.0;
     const lngDelta = radiusKm / (111.0 * Math.cos((villageCenter.lat * Math.PI) / 180.0));
@@ -107,7 +111,7 @@ export const Dashboard: React.FC = () => {
       west: villageCenter.lng - lngDelta,
       east: villageCenter.lng + lngDelta,
     };
-  }, [villageCenter, radiusKm]);
+  }, [demData, villageCenter, radiusKm]);
 
   const handleToggleLayer = (key: keyof LayerVisibility) => {
     setLayers((prev) => {
@@ -158,6 +162,8 @@ export const Dashboard: React.FC = () => {
 
   const handleDownloadDem = async () => {
     setIsLoading(true);
+    setDemData(null);
+    setContours([]);
     setSelectedContour(null);
     resetAnalysisState();
     setSlopeData(null);
@@ -388,6 +394,12 @@ export const Dashboard: React.FC = () => {
           // map view centre so the map pans to the newly chosen village.
           setVillageCenter(loc);
           setSelectedPoint(loc);
+          setDemData(null);
+          setContours([]);
+          setCandidateSites([]);
+          setRecommendedSite(null);
+          setSelectedCandidate(null);
+          resetAnalysisState();
           if (name) setVillageName(name);
           if (roiMode === 'polygon') setPolygonPoints([]);
         }}
@@ -687,9 +699,15 @@ export const Dashboard: React.FC = () => {
         selectedPoint={selectedPoint}
         onPointSelect={(pt) => {
           // A direct map click is an explicit new analysis location selection.
-          // Update both the analysis anchor and the map view.
+          // Update both the analysis anchor and the map view, clearing stale DEM overlays.
           setVillageCenter(pt);
           setSelectedPoint(pt);
+          setDemData(null);
+          setContours([]);
+          setCandidateSites([]);
+          setRecommendedSite(null);
+          setSelectedCandidate(null);
+          resetAnalysisState();
         }}
         computedBbox={computedBbox}
         roiMode={roiMode}
