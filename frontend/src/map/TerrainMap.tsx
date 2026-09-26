@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import {
   MapContainer, TileLayer, Marker, Rectangle, Polygon, Polyline,
-  ImageOverlay, useMap, useMapEvents, Popup,
+  ImageOverlay, useMap, useMapEvents, Popup, Circle, Tooltip,
 } from 'react-leaflet';
 import * as L from 'leaflet';
 import {
@@ -140,6 +140,7 @@ interface TerrainMapProps {
   basemap: BasemapType;
   candidateSites: CandidateSite[];
   recommendedSite: CandidateSite | null;
+  selectedCandidate?: CandidateSite | null;
   onCandidateClick?: (site: CandidateSite) => void;
   kmlResult?: ContourAnalysisResponse | null;
 }
@@ -150,7 +151,7 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
   slopeData, dropletPath, watershed, pond, profileTransect,
   interactionMode, onAnalysisClick, watershedOutlet, layers,
   flowVectors, streamNetwork, basemap, candidateSites, recommendedSite,
-  onCandidateClick, kmlResult,
+  selectedCandidate, onCandidateClick, kmlResult,
 }) => {
   const initialCenter: [number, number] = [20.5937, 78.9629]; // Centre of India
 
@@ -285,54 +286,116 @@ export const TerrainMap: React.FC<TerrainMapProps> = ({
           </>
         )}
 
-        {/* Candidate Pond Sites */}
+        {/* Candidate Pond Sites & Enclosed Water Footprints */}
         {layers.candidateSites && candidateSites.map((site) => {
           const isRec = recommendedSite?.site_id === site.site_id;
           if (isRec && !layers.recommendedSite) return null;
-          if (!isRec) return (
-            <Marker
-              key={site.site_id}
-              position={[site.lat, site.lng]}
-              icon={createCandidateIcon(site.suitability_tier, site.rank, false)}
-              eventHandlers={{ click: () => onCandidateClick?.(site) }}
-            >
-              <Popup>
-                <div style={{ fontFamily: 'monospace', fontSize: '12px', minWidth: '200px' }}>
-                  <strong>#{site.rank} — {site.suitability_tier}</strong><br />
-                  Score: <strong>{site.scores.composite_score.toFixed(1)}/100</strong><br />
-                  Elevation: {site.elevation_m} m | Slope: {site.slope_deg}°<br />
-                  Catchment: {site.catchment_area_km2.toFixed(3)} km²<br />
-                  Est. Depth: {site.estimated_depth_m} m<br />
-                  Est. Volume: {site.estimated_volume_m3.toLocaleString()} m³
-                </div>
-              </Popup>
-            </Marker>
-          );
+          if (!isRec) {
+            const areaM2 = site.estimated_surface_area_m2 || 5000;
+            const radiusMeters = Math.max(12, Math.round(Math.sqrt(areaM2 / Math.PI)));
+            const isSelected = selectedCandidate?.site_id === site.site_id;
+            return (
+              <React.Fragment key={site.site_id}>
+                {/* Enclosed Pond Water Surface Area Circle */}
+                <Circle
+                  center={[site.lat, site.lng]}
+                  radius={radiusMeters}
+                  pathOptions={{
+                    color: isSelected ? '#06b6d4' : '#0ea5e9',
+                    weight: isSelected ? 3 : 1.5,
+                    fillColor: isSelected ? '#22d3ee' : '#38bdf8',
+                    fillOpacity: isSelected ? 0.45 : 0.25,
+                    dashArray: isSelected ? undefined : '4, 4',
+                  }}
+                  eventHandlers={{ click: () => onCandidateClick?.(site) }}
+                >
+                  <Tooltip direction="top" offset={[0, -10]} opacity={0.92}>
+                    <div style={{ fontFamily: 'monospace', fontSize: '11px', textAlign: 'center' }}>
+                      <strong>#{site.rank} Pond Area: {areaM2.toLocaleString()} m²</strong><br />
+                      <span>({(areaM2 / 10000).toFixed(2)} ha | ⌀ {(2 * radiusMeters).toFixed(0)}m)</span>
+                    </div>
+                  </Tooltip>
+                </Circle>
+                {/* Candidate Badge Pin */}
+                <Marker
+                  position={[site.lat, site.lng]}
+                  icon={createCandidateIcon(site.suitability_tier, site.rank, false)}
+                  eventHandlers={{ click: () => onCandidateClick?.(site) }}
+                >
+                  <Popup>
+                    <div style={{ fontFamily: 'monospace', fontSize: '12px', minWidth: '220px' }}>
+                      <strong>#{site.rank} — {site.suitability_tier}</strong><br />
+                      Score: <strong>{site.scores.composite_score.toFixed(1)}/100</strong><br />
+                      <div style={{ margin: '6px 0', padding: '5px 8px', background: 'rgba(6,182,212,0.12)', borderRadius: '4px', border: '1px solid rgba(6,182,212,0.35)' }}>
+                        🌊 <strong>Enclosed Pond Area:</strong><br />
+                        <strong>{areaM2.toLocaleString()} m²</strong> ({(areaM2 / 10000).toFixed(2)} ha | {(areaM2 / 4046.86).toFixed(2)} acres)<br />
+                        <span>Water Spread Diameter: ⌀ ~{(2 * radiusMeters).toFixed(0)} m</span>
+                      </div>
+                      Elevation: {site.elevation_m} m | Slope: {site.slope_deg}°<br />
+                      Catchment: {site.catchment_area_km2.toFixed(3)} km²<br />
+                      Est. Depth: {site.estimated_depth_m} m<br />
+                      Est. Volume: {site.estimated_volume_m3.toLocaleString()} m³
+                    </div>
+                  </Popup>
+                </Marker>
+              </React.Fragment>
+            );
+          }
           return null;
         })}
 
-        {/* Recommended Site — separate so it's always on top */}
-        {layers.recommendedSite && recommendedSite && (
-          <Marker
-            key={recommendedSite.site_id + '_rec'}
-            position={[recommendedSite.lat, recommendedSite.lng]}
-            icon={createCandidateIcon('Recommended', 1, true)}
-            eventHandlers={{ click: () => onCandidateClick?.(recommendedSite) }}
-          >
-            <Popup>
-              <div style={{ fontFamily: 'monospace', fontSize: '12px', minWidth: '220px' }}>
-                <strong>⭐ RECOMMENDED SITE</strong><br />
-                Score: <strong>{recommendedSite.scores.composite_score.toFixed(1)}/100</strong><br />
-                Lat: {recommendedSite.lat.toFixed(5)}°, Lng: {recommendedSite.lng.toFixed(5)}°<br />
-                Elevation: {recommendedSite.elevation_m} m | Slope: {recommendedSite.slope_deg}°<br />
-                Catchment: {recommendedSite.catchment_area_km2.toFixed(3)} km²<br />
-                Est. Depth: {recommendedSite.estimated_depth_m} m<br />
-                Est. Volume: {recommendedSite.estimated_volume_m3.toLocaleString()} m³<br />
-                {recommendedSite.estimated_runoff_m3 && <>Est. Runoff: {recommendedSite.estimated_runoff_m3.toLocaleString()} m³</>}
-              </div>
-            </Popup>
-          </Marker>
-        )}
+        {/* Recommended Site — separate with highlighted enclosed reservoir area */}
+        {layers.recommendedSite && recommendedSite && (() => {
+          const recAreaM2 = recommendedSite.estimated_surface_area_m2 || 6000;
+          const recRadius = Math.max(14, Math.round(Math.sqrt(recAreaM2 / Math.PI)));
+          const isRecSelected = selectedCandidate?.site_id === recommendedSite.site_id;
+          return (
+            <React.Fragment key={recommendedSite.site_id + '_rec_group'}>
+              {/* Recommended Pond Enclosed Area Circle */}
+              <Circle
+                center={[recommendedSite.lat, recommendedSite.lng]}
+                radius={recRadius}
+                pathOptions={{
+                  color: '#f59e0b',
+                  weight: isRecSelected ? 3.5 : 2.5,
+                  fillColor: '#fbbf24',
+                  fillOpacity: isRecSelected ? 0.50 : 0.35,
+                }}
+                eventHandlers={{ click: () => onCandidateClick?.(recommendedSite) }}
+              >
+                <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
+                  <div style={{ fontFamily: 'monospace', fontSize: '11px', textAlign: 'center', color: '#b45309' }}>
+                    <strong>⭐ Recommended Pond: {recAreaM2.toLocaleString()} m²</strong><br />
+                    <span>({(recAreaM2 / 10000).toFixed(2)} ha | ⌀ {(2 * recRadius).toFixed(0)}m)</span>
+                  </div>
+                </Tooltip>
+              </Circle>
+              <Marker
+                position={[recommendedSite.lat, recommendedSite.lng]}
+                icon={createCandidateIcon('Recommended', 1, true)}
+                eventHandlers={{ click: () => onCandidateClick?.(recommendedSite) }}
+              >
+                <Popup>
+                  <div style={{ fontFamily: 'monospace', fontSize: '12px', minWidth: '240px' }}>
+                    <strong>⭐ RECOMMENDED POND SITE</strong><br />
+                    Score: <strong>{recommendedSite.scores.composite_score.toFixed(1)}/100</strong><br />
+                    <div style={{ margin: '6px 0', padding: '5px 8px', background: 'rgba(245,158,11,0.15)', borderRadius: '4px', border: '1px solid rgba(245,158,11,0.45)' }}>
+                      🌊 <strong>Enclosed Pond Area:</strong><br />
+                      <strong>{recAreaM2.toLocaleString()} m²</strong> ({(recAreaM2 / 10000).toFixed(2)} ha | {(recAreaM2 / 4046.86).toFixed(2)} acres)<br />
+                      <span>Water Spread Diameter: ⌀ ~{(2 * recRadius).toFixed(0)} m</span>
+                    </div>
+                    Lat: {recommendedSite.lat.toFixed(5)}°, Lng: {recommendedSite.lng.toFixed(5)}°<br />
+                    Elevation: {recommendedSite.elevation_m} m | Slope: {recommendedSite.slope_deg}°<br />
+                    Catchment: {recommendedSite.catchment_area_km2.toFixed(3)} km²<br />
+                    Est. Depth: {recommendedSite.estimated_depth_m} m<br />
+                    Est. Volume: {recommendedSite.estimated_volume_m3.toLocaleString()} m³<br />
+                    {recommendedSite.estimated_runoff_m3 && <>Est. Runoff: {recommendedSite.estimated_runoff_m3.toLocaleString()} m³</>}
+                  </div>
+                </Popup>
+              </Marker>
+            </React.Fragment>
+          );
+        })()}
 
         {/* ── Phase 2: KML Catchment Polygon ── */}
         {kmlResult?.catchment && kmlResult.catchment.boundary.length >= 3 && (

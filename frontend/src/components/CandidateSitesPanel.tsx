@@ -97,13 +97,13 @@ export const CandidateSitesPanel: React.FC<CandidateSitesPanelProps> = ({
                     {site.scores.composite_score.toFixed(0)}
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-x-2 text-[9px] font-mono text-slate-400">
+                <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 text-[9px] font-mono text-slate-400">
                   <span>⛰ {site.elevation_m}m</span>
                   <span>↗ {site.slope_deg}°</span>
                   <span>💧 {site.catchment_area_km2.toFixed(2)}km²</span>
                   <span>depth {site.estimated_depth_m}m</span>
                   <span>{(site.estimated_volume_m3 / 1000).toFixed(1)}k m³</span>
-                  {site.estimated_runoff_m3 && <span>Q {(site.estimated_runoff_m3 / 1000).toFixed(0)}k m³</span>}
+                  <span className="text-cyan-300 font-bold truncate">🌊 {site.estimated_surface_area_m2 ? `${(site.estimated_surface_area_m2 / 10000).toFixed(2)}ha (${site.estimated_surface_area_m2.toLocaleString()}m²)` : 'Area N/A'}</span>
                 </div>
               </button>
             );

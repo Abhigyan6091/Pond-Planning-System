@@ -731,6 +731,7 @@ export const Dashboard: React.FC = () => {
         basemap={basemap}
         candidateSites={candidateSites}
         recommendedSite={recommendedSite}
+        selectedCandidate={selectedCandidate}
         kmlResult={kmlResult}
         onCandidateClick={(site) => {
           setSelectedCandidate(site);
