@@ -40,3 +40,6 @@ __pycache__/
 venv/
 env/
 .env
+
+# Demo recordings (large binary files – not tracked in git)
+demo/
