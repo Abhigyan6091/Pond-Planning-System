@@ -43,3 +43,6 @@ env/
 
 # Demo recordings (large binary files – not tracked in git)
 demo/
+
+# Telemetry binaries and tools (exceed GitHub file size limits)
+telemetry_tools/

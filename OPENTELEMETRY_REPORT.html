@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenTelemetry Technical Report | Village Pond Planning System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Outfit', -apple-system, sans-serif;
+      line-height: 1.65;
+      color: #1e293b;
+      background: #f8fafc;
+      padding: 2.5rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    h1, h2, h3, h4 { color: #0f172a; margin-top: 1.75rem; margin-bottom: 0.75rem; font-weight: 700; }
+    h1 { font-size: 2.2rem; border-bottom: 2px solid #0284c7; padding-bottom: 0.5rem; color: #0284c7; }
+    h2 { font-size: 1.5rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.4rem; margin-top: 2.5rem; color: #0369a1; }
+    h3 { font-size: 1.2rem; color: #334155; }
+    p, li { font-size: 0.95rem; color: #334155; }
+    table { width: 100%; border-collapse: collapse; margin: 1.25rem 0; font-size: 0.88rem; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f1f5f9; color: #475569; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+    tr:hover { background: #f8fafc; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; color: #0284c7; }
+    pre { background: #0f172a; color: #f8fafc; padding: 1.25rem; border-radius: 8px; overflow-x: auto; margin: 1.25rem 0; }
+    pre code { background: transparent; color: #f8fafc; padding: 0; }
+    img { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin: 1rem 0; }
+    hr { border: 0; height: 1px; background: #e2e8f0; margin: 2rem 0; }
+    @media print {
+      body { background: #fff; padding: 0; max-width: 100%; }
+      img { max-width: 95%; page-break-inside: avoid; }
+      h2, h3 { page-break-after: avoid; }
+      pre, table { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<h1>Technical Lab Report: OpenTelemetry Integration &amp; System Observability</h1>
+<h2>Project: AI-based Village Pond Planning System (Terrain Analyzer)</h2>
+<hr />
+<h3>Student &amp; Submission Information</h3>
+<ul>
+<li><strong>Project Title:</strong> AI-based Village Pond Planning System (Terrain Analyzer)</li>
+<li><strong>Component Evaluated:</strong> OpenTelemetry Distributed Tracing, Metrics, and Correlated Logging</li>
+<li><strong>Environment:</strong> Windows 11 x64, Python 3.13, FastAPI, Jaeger All-In-One v1.60, Prometheus Exporter</li>
+</ul>
+<hr />
+<h2>1. Executive Summary &amp; Objective</h2>
+<p>Modern distributed systems, microservices, and compute-heavy geospatial backend services rely on observability to answer critical questions: <em>What happened? Where was the time spent? Which exact subsystem failed and why?</em></p>
+<p>The objective of this assignment is to integrate the <strong>OpenTelemetry (OTel)</strong> open standard into the existing <strong>AI-based Village Pond Planning System (Terrain Analyzer)</strong>. OpenTelemetry provides vendor-neutral APIs, SDKs, and tooling to capture and export the three primary pillars of observability:
+1. <strong>Distributed Tracing:</strong> Microsecond-resolution execution graphs with parent-child span hierarchies, tags, and events.
+2. <strong>Application Metrics:</strong> Counters, histograms, and gauges exposing computational throughput, latency distributions, and resource utilization.
+3. <strong>Correlated Logging:</strong> Log events automatically enriched with active <code>trace_id</code> and <code>span_id</code> contexts to eliminate guesswork during forensic debugging.</p>
+<p>This report details the design, implementation, and empirical verification of OpenTelemetry within the project, complete with data captured directly from the running system, screenshot demonstrations, and an architectural analysis of system behavior.</p>
+<hr />
+<h2>2. System Architecture &amp; Observability Topology</h2>
+<h3>2.1 Backend Workflow &amp; Core Pipeline</h3>
+<p>The Village Pond Planning System processes complex topographic inputs (KML/KMZ contour lines) to identify optimal water harvesting pond locations and delineate hydrologic catchment areas. Its pipeline consists of five intensive computational stages:
+1. <strong>Contour Extraction &amp; Parsing:</strong> Extracts raw KML from KMZ ZIP archives and parses multi-geometry elevation contours.
+2. <strong>DEM Reconstruction:</strong> Interpolates irregular vector contours into a dense raster Digital Elevation Model (DEM) grid.
+3. <strong>Pond Suitability Evaluation:</strong> Evaluates candidate topographic depressions using slope, flow accumulation, depression depth, and runoff potential.
+4. <strong>Hydrologic Watershed Delineation:</strong> Executes D8 flow routing from the recommended pond outlet to compute contributing catchment area.
+5. <strong>Geospatial Overlay Generation:</strong> Renders hillshade and hypsometric elevation overlays for spatial mapping.</p>
+<h3>2.2 Observability Architecture Diagram</h3>
+<pre><code class="language-mermaid">graph TD
+    Client[&quot;Client / Evaluator Browser&quot;] --&gt;|HTTP POST /api/analyzeContour| FastAPI[&quot;FastAPI Application (Port 5240)&quot;]
+
+    subgraph &quot;FastAPI Instrumentation Layer&quot;
+        FastAPI --&gt; FastApiInst[&quot;FastAPIInstrumentor&quot;]
+        FastAPI --&gt; Middleware[&quot;OpenTelemetry Trace &amp; Metric Middleware&quot;]
+        FastAPI --&gt; Pipeline[&quot;Contour Analysis Pipeline&quot;]
+    end
+
+    subgraph &quot;Domain Spans&quot;
+        Pipeline --&gt; Span1[&quot;parse_contour_kml_kmz&quot;]
+        Pipeline --&gt; Span2[&quot;reconstruct_terrain_dem&quot;]
+        Pipeline --&gt; Span3[&quot;evaluate_pond_suitability&quot;]
+        Pipeline --&gt; Span4[&quot;delineate_catchment_watershed&quot;]
+        Pipeline --&gt; Span5[&quot;generate_dem_overlays&quot;]
+    end
+
+    subgraph &quot;OpenTelemetry SDK Engine&quot;
+        Span1 &amp; Span2 &amp; Span3 &amp; Span4 &amp; Span5 --&gt; TracerProvider[&quot;TracerProvider (BatchSpanProcessor)&quot;]
+        Middleware --&gt; MeterProvider[&quot;MeterProvider (PrometheusMetricReader)&quot;]
+        Pipeline --&gt; LoggerInst[&quot;Python Logging (trace_id &amp; span_id injection)&quot;]
+    end
+
+    subgraph &quot;Exporters &amp; Backends&quot;
+        TracerProvider --&gt;|OTLP HTTP (Port 4318)| Jaeger[&quot;Jaeger All-In-One (Port 16686)&quot;]
+        TracerProvider --&gt;|In-Memory Buffer| MemTrace[&quot;Internal Spans Storage&quot;]
+        MeterProvider --&gt;|Scrape Endpoint| PromEndpoint[&quot;/metrics (Prometheus Format)&quot;]
+        LoggerInst --&gt; StorageLog[&quot;storage/opentelemetry.log&quot;]
+    end
+
+    subgraph &quot;Visualization &amp; Inspection&quot;
+        Jaeger --&gt; JaegerUI[&quot;Jaeger Web UI (http://localhost:16686)&quot;]
+        MemTrace &amp; StorageLog --&gt; TelemetryUI[&quot;Telemetry Center Dashboard (http://localhost:5240/telemetry)&quot;]
+        PromEndpoint --&gt; PromUI[&quot;Prometheus Scrape Client / Direct Inspection&quot;]
+    end
+</code></pre>
+<hr />
+<h2>3. Implementation Details</h2>
+<p>The OpenTelemetry subsystem is implemented cleanly and modularly in <a href="backend/telemetry.py"><code>backend/telemetry.py</code></a> and seamlessly integrated into the application lifecycle in <a href="backend/main.py"><code>backend/main.py</code></a> and <a href="backend/api/contour_analysis_routes.py"><code>backend/api/contour_analysis_routes.py</code></a>.</p>
+<h3>3.1 Distributed Tracing Implementation</h3>
+<ul>
+<li><strong>Resource Definition:</strong> Standard OpenTelemetry semantic resource attributes:
+  <code>python
+  resource = Resource.create({
+      "service.name": "village-pond-planning-system",
+      "service.namespace": "hydrology-dem-ai",
+      "service.version": "1.0.0",
+      "deployment.environment": "production",
+      "host.name": os.getenv("COMPUTERNAME", "localhost")
+  })</code></li>
+<li><strong>OTLP Trace Exporter:</strong> Batched export via <code>OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")</code> communicating directly with Jaeger's native OpenTelemetry HTTP receiver on port 4318.</li>
+<li><strong>In-Memory Ring Buffer:</strong> An <code>InMemorySpanRecorder</code> collects recent finished spans (up to 250) for immediate querying via <code>/api/telemetry/spans</code> and live dashboard rendering.</li>
+<li><strong>FastAPI Auto-Instrumentation:</strong> <code>FastAPIInstrumentor.instrument_app(app)</code> instruments every HTTP route, capturing:</li>
+<li><code>http.method</code> (e.g. <code>POST</code>, <code>GET</code>)</li>
+<li><code>http.route</code> (e.g. <code>/api/analyzeContour</code>, <code>/findCatchment</code>)</li>
+<li><code>http.status_code</code> (e.g. <code>200</code>, <code>400</code>, <code>422</code>, <code>500</code>)</li>
+<li><code>http.target</code> and client parameters.</li>
+<li><strong>Domain Child Spans:</strong> Manual spans instrumenting each critical algorithmic step using <code>tracer.start_as_current_span(...)</code>:</li>
+<li><code>parse_contour_kml_kmz</code>: Captures <code>file.name</code>, <code>file.format</code>, <code>file.size_bytes</code>, <code>contour.count</code>, and elevation bounds.</li>
+<li><code>reconstruct_terrain_dem</code>: Captures raster <code>dem.grid_rows</code>, <code>dem.grid_cols</code>, <code>dem.total_cells</code>, and spatial <code>dem.pixel_size_m</code>.</li>
+<li><code>evaluate_pond_suitability</code>: Captures <code>suitability.num_candidates</code>, <code>suitability.top_score</code>, and optimal coordinates.</li>
+<li><code>delineate_catchment_watershed</code>: Captures <code>catchment.area_m2</code>, <code>catchment.area_km2</code>, and watershed slope.</li>
+<li><code>generate_dem_overlays</code>: Captures visualization rendering performance.</li>
+</ul>
+<h3>3.2 Metrics Collection Implementation</h3>
+<ul>
+<li><strong>Meter Provider &amp; Reader:</strong> Configured with <code>PrometheusMetricReader()</code>, exposing live metrics at <code>http://localhost:5240/metrics</code>.</li>
+<li><strong>Custom Business &amp; Operational Instruments:</strong>
+  | Metric Name | Instrument Type | Unit | Description |
+  | :--- | :--- | :--- | :--- |
+  | <code>village_pond_requests_total</code> | Counter | <code>1</code> | Total API requests grouped by method, route, and HTTP status code |
+  | <code>village_pond_request_duration_seconds</code> | Histogram | <code>s</code> | Latency distribution of HTTP endpoints across logarithmic buckets |
+  | <code>village_pond_analysis_duration_seconds</code> | Histogram | <code>s</code> | End-to-end contour analysis and pond modeling processing latency |
+  | <code>village_pond_candidates_found_total</code> | Counter | <code>1</code> | Number of viable pond candidate sites discovered per analysis |
+  | <code>village_pond_catchment_area_m2</code> | Histogram | <code>m²</code> | Distribution of watershed catchment areas calculated |
+  | <code>village_pond_active_requests</code> | UpDownCounter | <code>1</code> | Real-time gauge of in-flight concurrent calculations |
+  | <code>village_pond_contours_parsed_total</code> | Counter | <code>1</code> | Cumulative vector contour lines ingested from KML/KMZ files |
+  | <code>village_pond_dem_cells_processed_total</code> | Counter | <code>1</code> | Cumulative raster elevation cells processed |</li>
+</ul>
+<h3>3.3 Correlated Logging Implementation</h3>
+<ul>
+<li><strong>Context Injection:</strong> Python's standard <code>logging</code> library is configured via <code>LoggingInstrumentor().instrument(set_logging_format=True)</code>.</li>
+<li><strong>Log Format:</strong>
+  <code>%(asctime)s [%(levelname)s] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s] %(name)s: %(message)s</code></li>
+<li><strong>Correlation Benefit:</strong> Whenever a log message is emitted during a request, OpenTelemetry extracts the active <code>trace_id</code> and <code>span_id</code> from the thread-local context and embeds them into the log line.</li>
+<li><strong>Dual Persistence:</strong> Logs are persisted to <code>storage/opentelemetry.log</code> and captured in an in-memory buffer (<code>InMemoryLogHandler</code>) for real-time inspection in the web dashboard.</li>
+</ul>
+<h3>3.4 Context Propagation &amp; Response Headers</h3>
+<p>To facilitate end-to-end verification, custom middleware automatically injects tracing headers into all HTTP responses:
+- <code>X-Trace-ID</code>: Hex-encoded 128-bit trace ID (e.g., <code>f585c3b465a43cc4f08a400a71ceeb83</code>)
+- <code>X-Span-ID</code>: Hex-encoded 64-bit root span ID (e.g., <code>4ac0f4a5945400a4</code>)</p>
+<hr />
+<h2>4. Tools, Libraries, and Backend Services Used</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Component</th>
+<th style="text-align: left;">Tool / Library</th>
+<th style="text-align: left;">Version</th>
+<th style="text-align: left;">Role in Architecture</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Telemetry API</strong></td>
+<td style="text-align: left;"><code>opentelemetry-api</code></td>
+<td style="text-align: left;">1.45.1</td>
+<td style="text-align: left;">Abstract interface for tracing, metrics, and context propagation</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Telemetry SDK</strong></td>
+<td style="text-align: left;"><code>opentelemetry-sdk</code></td>
+<td style="text-align: left;">1.45.1</td>
+<td style="text-align: left;">Concrete tracer/meter implementations, batching, and span processing</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>FastAPI Instrumentation</strong></td>
+<td style="text-align: left;"><code>opentelemetry-instrumentation-fastapi</code></td>
+<td style="text-align: left;">0.66b1</td>
+<td style="text-align: left;">Automatic HTTP request/response span and latency tracking</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Logging Instrumentation</strong></td>
+<td style="text-align: left;"><code>opentelemetry-instrumentation-logging</code></td>
+<td style="text-align: left;">0.66b1</td>
+<td style="text-align: left;">Trace context injection into Python standard loggers</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>OTLP Exporter</strong></td>
+<td style="text-align: left;"><code>opentelemetry-exporter-otlp</code></td>
+<td style="text-align: left;">1.45.1</td>
+<td style="text-align: left;">Exporting telemetry to Jaeger over HTTP (Port 4318)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Prometheus Exporter</strong></td>
+<td style="text-align: left;"><code>opentelemetry-exporter-prometheus</code></td>
+<td style="text-align: left;">0.66b1</td>
+<td style="text-align: left;">Translating OpenTelemetry metrics into Prometheus exposition format</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Prometheus Client</strong></td>
+<td style="text-align: left;"><code>prometheus_client</code></td>
+<td style="text-align: left;">0.21.1</td>
+<td style="text-align: left;">Serving <code>/metrics</code> scrape endpoint</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Distributed Tracing Backend</strong></td>
+<td style="text-align: left;"><strong>Jaeger All-In-One</strong></td>
+<td style="text-align: left;">v1.60.0</td>
+<td style="text-align: left;">High-performance distributed tracing backend, collector, and web UI</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Observability Dashboard</strong></td>
+<td style="text-align: left;"><strong>Telemetry Center UI</strong></td>
+<td style="text-align: left;">1.0.0</td>
+<td style="text-align: left;">Embedded real-time web portal hosted directly on the application</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>5. Screenshot Demonstrations &amp; Results Analysis</h2>
+<p>The screenshots below were captured directly from the live running project during execution of contour analysis on <code>contours_1m.kml</code> and <code>contours_1m.kmz</code>. All screenshot files are stored in <a href="telemetry_screenshots/"><code>telemetry_screenshots/</code></a>.</p>
+<hr />
+<h3>Screenshot 1: Jaeger Service Discovery &amp; Trace Query</h3>
+<p><img alt="Screenshot 1: Jaeger Service Discovery" src="telemetry_screenshots/01_jaeger_service_selection.png" /></p>
+<ul>
+<li><strong>Source URL:</strong> <code>http://localhost:16686</code></li>
+<li><strong>What this demonstrates:</strong></li>
+<li>The Jaeger UI running on port 16686 has successfully discovered the instrumented service: <code>village-pond-planning-system</code>.</li>
+<li>The operation dropdown reflects all auto-instrumented endpoints as well as internal domain spans (<code>parse_contour_kml_kmz</code>, <code>reconstruct_terrain_dem</code>, <code>evaluate_pond_suitability</code>, <code>delineate_catchment_watershed</code>, <code>generate_dem_overlays</code>).</li>
+<li>This verifies that the OTLP exporter is actively transmitting registered service metadata and span definitions to the Jaeger backend.</li>
+</ul>
+<hr />
+<h3>Screenshot 2: Jaeger Traces List &amp; Latency Timeline</h3>
+<p><img alt="Screenshot 2: Jaeger Traces List" src="telemetry_screenshots/02_jaeger_traces_list.png" /></p>
+<ul>
+<li><strong>Source URL:</strong> <code>http://localhost:16686/search?service=village-pond-planning-system</code></li>
+<li><strong>What this demonstrates:</strong></li>
+<li>A comprehensive query result showing all captured traces across different user interactions.</li>
+<li>Each entry lists the trace duration, timestamp, total span count, and HTTP operation.</li>
+<li>Demonstrates both successful analysis requests (e.g. <code>POST /api/analyzeContour</code>, 61 spans, duration ~709 ms) and client error validation traces (e.g. <code>POST /api/analyzeContour</code>, 5 spans, 400 Bad Request for unsupported file types), proving robust error recording.</li>
+</ul>
+<hr />
+<h3>Screenshot 3: Deep Trace Waterfall &amp; Nested Span Hierarchy</h3>
+<p><img alt="Screenshot 3: Deep Trace Waterfall" src="telemetry_screenshots/03_jaeger_distributed_trace_waterfall.png" /></p>
+<ul>
+<li><strong>Source URL:</strong> <code>http://localhost:16686/trace/f585c3b465a43cc4f08a400a71ceeb83</code></li>
+<li><strong>What this demonstrates:</strong></li>
+<li>The distributed trace waterfall view for Trace ID <code>f585c3b465a43cc4f08a400a71ceeb83</code>.</li>
+<li><strong>Span Breakdown:</strong><ul>
+<li>Root Span: <code>POST /api/analyzeContour</code> (709.43 ms)</li>
+<li>Child 1: <code>parse_contour_kml_kmz</code> (298.95 ms) – reading XML, extracting coordinates.</li>
+<li>Child 2: <code>reconstruct_terrain_dem</code> (130.67 ms) – raster interpolation of 1,355 contours.</li>
+<li>Child 3: <code>evaluate_pond_suitability</code> (107.26 ms) – multi-criteria candidate ranking.</li>
+<li>Child 4: <code>delineate_catchment_watershed</code> (56.89 ms) – D8 flow accumulation and polygon tracing.</li>
+<li>Child 5: <code>generate_dem_overlays</code> (30.46 ms) – rendering PNG hillshade/elevation overlays.</li>
+</ul>
+</li>
+<li>This waterfall proves the parent-child relationship between HTTP routing and internal business logic.</li>
+</ul>
+<hr />
+<h3>Screenshot 4: Embedded OpenTelemetry Observability Dashboard</h3>
+<p><img alt="Screenshot 4: Observability Dashboard Overview" src="telemetry_screenshots/04_telemetry_dashboard_overview.png" /></p>
+<ul>
+<li><strong>Source URL:</strong> <code>http://localhost:5240/telemetry</code></li>
+<li><strong>What this demonstrates:</strong></li>
+<li>The project's native Observability Center dashboard.</li>
+<li>Top-level KPI cards show live statistics: <strong>Total Captured Spans (50+)</strong>, <strong>Distinct Traces (5)</strong>, <strong>Correlated Logs (12)</strong>, and <strong>Average Span Latency (65.2 ms)</strong>.</li>
+<li>The Spans table shows real-time tabular data with direct clickable links to open the exact trace in Jaeger (<code>http://localhost:16686/trace/&lt;trace_id&gt;</code>).</li>
+</ul>
+<hr />
+<h3>Screenshot 5: Trace-Correlated Application Logs</h3>
+<p><img alt="Screenshot 5: Trace-Correlated Logs" src="telemetry_screenshots/05_telemetry_correlated_logs.png" /></p>
+<ul>
+<li><strong>Source URL:</strong> <code>http://localhost:5240/telemetry</code> (Correlated Logs tab)</li>
+<li><strong>What this demonstrates:</strong></li>
+<li>The application logs emitted by <code>village_pond.contour_analysis</code>.</li>
+<li>Crucially, every single log message is bound to its parent <code>trace_id</code> (e.g. <code>f585c3b465...</code>) and specific child <code>span_id</code>.</li>
+<li>For example, when parsing finishes, the log <code>Successfully parsed 1355 contours from contours_1m.kml</code> carries <code>span_id=99e12d69...</code>, which matches the exact <code>parse_contour_kml_kmz</code> span in the waterfall!</li>
+<li>Clicking any trace ID instantly navigates to that trace in the Jaeger UI.</li>
+</ul>
+<hr />
+<h3>Screenshot 6: Registered OpenTelemetry Metric Instruments</h3>
+<p><img alt="Screenshot 6: Metric Instruments Tab" src="telemetry_screenshots/06_telemetry_registered_metrics.png" /></p>
+<ul>
+<li><strong>Source URL:</strong> <code>http://localhost:5240/telemetry</code> (Prometheus Metrics tab)</li>
+<li><strong>What this demonstrates:</strong></li>
+<li>Overview of all active OpenTelemetry metric instruments (<code>village_pond_requests_total</code>, <code>village_pond_request_duration_seconds</code>, <code>village_pond_analysis_duration_seconds</code>, <code>village_pond_candidates_found_total</code>, <code>village_pond_catchment_area_m2</code>, <code>village_pond_active_requests</code>, <code>village_pond_contours_parsed_total</code>, <code>village_pond_dem_cells_processed_total</code>).</li>
+<li>Right panel displays live preview of the Prometheus scrape buffer.</li>
+</ul>
+<hr />
+<h3>Screenshot 7: Raw Prometheus Exposition Format (/metrics)</h3>
+<p><img alt="Screenshot 7: Prometheus Raw Metrics" src="telemetry_screenshots/07_prometheus_raw_metrics.png" /></p>
+<ul>
+<li><strong>Source URL:</strong> <code>http://localhost:5240/metrics</code></li>
+<li><strong>What this demonstrates:</strong></li>
+<li>The standard Prometheus text exposition format (version 0.0.4).</li>
+<li>Shows <code># HELP</code> and <code># TYPE</code> declarations for gauges, counters, and cumulative histogram buckets with boundary labels (<code>le="5.0"</code>, <code>le="10.0"</code>, <code>le="+Inf"</code>).</li>
+<li>Can be directly ingested by Prometheus servers, Grafana Agent, or Datadog collectors.</li>
+</ul>
+<hr />
+<h2>6. Analytical Understanding &amp; Practical Value of OpenTelemetry</h2>
+<h3>6.1 Performance Profiling &amp; Latency Diagnostics</h3>
+<p>In geospatial hydrological modeling, processing times can vary dramatically depending on the number of contour vertices and DEM resolution.
+- <strong>Before OpenTelemetry:</strong> The developer only knew that an upload request took ~700 ms. If a request slowed down to 5 seconds, there was no visibility into which algorithm caused the delay.
+- <strong>With OpenTelemetry:</strong> The span breakdown reveals exact timing:
+  - Vector Parsing: <strong>42.1%</strong> of total runtime (298.9 ms).
+  - DEM Interpolation: <strong>18.4%</strong> of runtime (130.7 ms).
+  - Candidate Scoring: <strong>15.1%</strong> of runtime (107.3 ms).
+  - Watershed Delineation: <strong>8.0%</strong> of runtime (56.9 ms).
+  - Overlay Generation: <strong>4.3%</strong> of runtime (30.5 ms).
+  This proves that parsing large KML XML trees is the primary computational bottleneck. Optimization efforts should target vector parsing (e.g. streaming SAX/iterparse) rather than the hydrology algorithms.</p>
+<h3>6.2 Root Cause Analysis &amp; Error Pinpointing</h3>
+<p>When an invalid or corrupt file is submitted:
+1. The root HTTP span records status <code>400 Bad Request</code> or <code>422 Unprocessable Entity</code>.
+2. The failing span (<code>parse_contour_kml_kmz</code>) captures the exception stack trace and sets <code>status=ERROR</code>.
+3. The correlated logs immediately display the error message alongside the <code>trace_id</code>.
+4. An on-call engineer can take the <code>X-Trace-ID</code> returned to the user, enter it into Jaeger or the Telemetry Center, and immediately see the exact line of code and input data that failed, without sifting through gigabytes of unrelated logs.</p>
+<h3>6.3 Capacity Planning &amp; SLA Monitoring via Metrics</h3>
+<p>The collected metrics provide continuous health tracking:
+- <strong><code>village_pond_requests_total</code></strong> allows calculation of request rates (QPS) and error percentages ($4xx/5xx$ ratio).
+- <strong><code>village_pond_request_duration_seconds</code></strong> allows calculating p50, p95, and p99 Service Level Objectives (SLOs).
+- <strong><code>village_pond_dem_cells_processed_total</code></strong> tracks backend computation volume over time, aiding server sizing and memory allocation.</p>
+<hr />
+<h2>7. How to Run and Verify the Implementation</h2>
+<h3>7.1 Single-Script Launch</h3>
+<p>The repository includes automated launch scripts for Windows:</p>
+<pre><code class="language-powershell"># In PowerShell:
+.\start.ps1
+
+# Or in Command Prompt:
+start.bat
+</code></pre>
+<p>This automatically starts:
+1. <strong>Jaeger All-In-One Tracing Backend:</strong> <code>http://localhost:16686</code> (OTLP port 4318)
+2. <strong>FastAPI Backend (Instrumented):</strong> <code>http://localhost:5240</code>
+3. <strong>React Frontend:</strong> <code>http://localhost:3000</code></p>
+<h3>7.2 Verification Endpoints</h3>
+<ul>
+<li><strong>Observability Dashboard:</strong> Navigate to <a href="http://localhost:5240/telemetry"><code>http://localhost:5240/telemetry</code></a> to see live spans, traces, and correlated logs.</li>
+<li><strong>Jaeger UI:</strong> Navigate to <a href="http://localhost:16686"><code>http://localhost:16686</code></a> and select service <code>village-pond-planning-system</code>.</li>
+<li><strong>Prometheus Metrics:</strong> Navigate to <a href="http://localhost:5240/metrics"><code>http://localhost:5240/metrics</code></a>.</li>
+</ul>
+<h3>7.3 Executing Sample Analysis Requests</h3>
+<p>To generate fresh traces, execute the included test contour files:</p>
+<pre><code class="language-powershell"># Test KML analysis
+python -c &quot;import requests; r = requests.post('http://localhost:5240/api/analyzeContour', files={'file': open('contours_1m.kml', 'rb')}); print('Status:', r.status_code, 'Trace-ID:', r.headers.get('X-Trace-ID'))&quot;
+
+# Test KMZ analysis
+python -c &quot;import requests; r = requests.post('http://localhost:5240/findCatchment', files={'file': open('contours_1m.kmz', 'rb')}); print('Status:', r.status_code, 'Trace-ID:', r.headers.get('X-Trace-ID'))&quot;
+</code></pre>
+<hr />
+<h2>8. Conclusion</h2>
+<p>OpenTelemetry integration transforms the AI-based Village Pond Planning System from an opaque backend service into a fully observable, production-ready system. By capturing distributed traces across the entire contour analysis pipeline, recording domain-specific Prometheus metrics, and correlating log statements with unique TraceIDs and SpanIDs, the system provides total transparency into performance, resource usage, and error states.</p>
+<p>All assignment requirements—instrumenting the existing Assignment 1 project, capturing traces, metrics, and logs, running live backends, and validating the output with empirical screenshots—have been successfully achieved and verified.</p>
+</body>
+</html>

@@ -46,11 +46,17 @@ from backend.models.contour_analysis_models import (
 from backend.models.dem_models import BoundingBox, LatLng
 from backend.models.suitability_models import SuitabilityRequest
 from backend.models.terrain_models import WatershedRequest
+import logging
+import time
 from backend.services.dem_service import DemService
 from backend.services.contour_parser_service import ContourParserService
 from backend.services.contour_terrain_service import ContourTerrainService
 from backend.services.suitability_service import SuitabilityService
 from backend.services.hydrology_service import HydrologyService
+from backend.telemetry import get_tracer, metric_instruments
+
+logger = logging.getLogger("village_pond.contour_analysis")
+tracer = get_tracer("village-pond-contour-pipeline")
 
 router = APIRouter(prefix="/contour-analysis", tags=["Phase 2 – Contour Analysis"])
 
@@ -75,14 +81,17 @@ def _ext(filename: str) -> str:
 async def _handle_contour_analysis(file: UploadFile) -> ContourAnalysisResponse:
     """
     Core handler shared by both route paths.
-
-    Raises HTTPException on client errors; returns ContourAnalysisResponse on success.
+    Instrumented with OpenTelemetry distributed tracing child spans,
+    metrics recording, and correlated logging.
     """
+    analysis_start_time = time.time()
     filename = file.filename or "upload"
     ext = _ext(filename)
+    logger.info(f"Initiating village pond terrain & catchment analysis for: '{filename}'")
 
     # ── 1. Extension validation ────────────────────────────────────────────
     if ext not in ALLOWED_EXTENSIONS:
+        logger.warning(f"Rejected unsupported file extension: '{ext}' for file '{filename}'")
         raise HTTPException(
             status_code=400,
             detail=(
@@ -94,32 +103,53 @@ async def _handle_contour_analysis(file: UploadFile) -> ContourAnalysisResponse:
     # ── 2. Read file bytes ─────────────────────────────────────────────────
     raw_bytes = await file.read()
     if not raw_bytes:
+        logger.error(f"Upload rejected: File '{filename}' is empty (0 bytes).")
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     if len(raw_bytes) > MAX_UPLOAD_BYTES:
+        logger.error(f"Upload rejected: File '{filename}' exceeds max size ({len(raw_bytes)//1024} KB).")
         raise HTTPException(
             status_code=413,
             detail=f"File too large ({len(raw_bytes)//1024} KB). Maximum allowed: 50 MB.",
         )
 
-    # ── 3. KMZ extraction → KML bytes ─────────────────────────────────────
+    # ── 3 & 4. KMZ extraction & KML Parsing (OpenTelemetry Span) ─────────
     fmt = "KML"
-    kml_bytes: bytes
-    if ext == ".kmz":
-        fmt = "KMZ"
-        try:
-            kml_bytes = ContourParserService.extract_kml_from_kmz(raw_bytes)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
-    else:
-        kml_bytes = raw_bytes
+    with tracer.start_as_current_span("parse_contour_kml_kmz") as parse_span:
+        parse_span.set_attribute("file.name", filename)
+        parse_span.set_attribute("file.extension", ext)
+        parse_span.set_attribute("file.size_bytes", len(raw_bytes))
 
-    # ── 4. KML Parsing ────────────────────────────────────────────────────
-    parse_result = ContourParserService.parse_kml_bytes(kml_bytes)
-    validation_error = ContourParserService.validate(parse_result)
-    if validation_error:
-        raise HTTPException(status_code=422, detail=validation_error)
+        if ext == ".kmz":
+            fmt = "KMZ"
+            try:
+                kml_bytes = ContourParserService.extract_kml_from_kmz(raw_bytes)
+            except ValueError as exc:
+                parse_span.record_exception(exc)
+                logger.error(f"KMZ archive extraction failed for '{filename}': {exc}")
+                raise HTTPException(status_code=422, detail=str(exc))
+        else:
+            kml_bytes = raw_bytes
 
-    contours = parse_result.contours
+        parse_result = ContourParserService.parse_kml_bytes(kml_bytes)
+        validation_error = ContourParserService.validate(parse_result)
+        if validation_error:
+            logger.error(f"Contour validation failed for '{filename}': {validation_error}")
+            raise HTTPException(status_code=422, detail=validation_error)
+
+        contours = parse_result.contours
+        parse_span.set_attribute("file.format", fmt)
+        parse_span.set_attribute("contour.count", parse_result.contour_count)
+        parse_span.set_attribute("elevation.min_m", parse_result.elevation_min_m)
+        parse_span.set_attribute("elevation.max_m", parse_result.elevation_max_m)
+        parse_span.set_attribute("contour.interval_m", parse_result.contour_interval_m or 1.0)
+        logger.info(
+            f"Successfully parsed {parse_result.contour_count} contours from {filename} "
+            f"[{parse_result.elevation_min_m}m to {parse_result.elevation_max_m}m]"
+        )
+
+    # Record metrics for contours parsed
+    if "contours_parsed" in metric_instruments:
+        metric_instruments["contours_parsed"].add(parse_result.contour_count, {"format": fmt})
 
     # ── 5. Build InputInfo ────────────────────────────────────────────────
     input_info = InputInfo(
@@ -131,19 +161,35 @@ async def _handle_contour_analysis(file: UploadFile) -> ContourAnalysisResponse:
         contour_interval_m=parse_result.contour_interval_m or 1.0,
     )
 
-    # ── 6. Terrain Reconstruction ─────────────────────────────────────────
-    try:
-        elevation_matrix, bounds, pixel_size_m = ContourTerrainService.reconstruct_dem(
-            contours, grid_size=100
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Terrain reconstruction failed: {exc}",
+    # ── 6. Terrain Reconstruction (OpenTelemetry Span) ────────────────────
+    with tracer.start_as_current_span("reconstruct_terrain_dem") as dem_span:
+        try:
+            elevation_matrix, bounds, pixel_size_m = ContourTerrainService.reconstruct_dem(
+                contours, grid_size=100
+            )
+        except ValueError as exc:
+            dem_span.record_exception(exc)
+            logger.error(f"Terrain reconstruction failed for '{filename}': {exc}")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Terrain reconstruction failed: {exc}",
+            )
+
+        dem_np = np.array(elevation_matrix, dtype=float)
+        rows, cols = dem_np.shape
+        dem_span.set_attribute("dem.grid_rows", rows)
+        dem_span.set_attribute("dem.grid_cols", cols)
+        dem_span.set_attribute("dem.total_cells", rows * cols)
+        dem_span.set_attribute("dem.pixel_size_m", round(pixel_size_m, 2))
+        dem_span.set_attribute("dem.elevation_min_m", round(float(np.min(dem_np)), 2))
+        dem_span.set_attribute("dem.elevation_max_m", round(float(np.max(dem_np)), 2))
+        logger.info(
+            f"Reconstructed DEM grid: {rows}x{cols} ({rows*cols} cells) at resolution {pixel_size_m:.2f}m/px"
         )
 
-    dem_np = np.array(elevation_matrix, dtype=float)
-    rows, cols = dem_np.shape
+    # Record DEM cells processed metric
+    if "dem_cells_processed" in metric_instruments:
+        metric_instruments["dem_cells_processed"].add(rows * cols, {"resolution": f"{pixel_size_m:.1f}m"})
 
     terrain_info = TerrainInfo(
         min_elevation_m=round(float(np.min(dem_np)), 2),
@@ -160,30 +206,49 @@ async def _handle_contour_analysis(file: UploadFile) -> ContourAnalysisResponse:
         ),
     )
 
-    # ── 7. Suitability Analysis — REUSE Phase 1 SuitabilityService ────────
+    # ── 7. Suitability Analysis (OpenTelemetry Span) ──────────────────────
     suit_request = SuitabilityRequest(
         elevation_matrix=elevation_matrix,
         bounds=bounds,
         pixel_size_m=pixel_size_m,
-        num_candidates=5,       # top 5; we use rank-1 for pond site
-        rainfall_mm=None,       # not required for Phase 2 terrain-only analysis
+        num_candidates=5,
+        rainfall_mm=None,
         runoff_coefficient=0.40,
     )
-    try:
-        suit_response = SuitabilityService.analyze(suit_request)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Suitability analysis failed: {exc}",
+
+    with tracer.start_as_current_span("evaluate_pond_suitability") as suit_span:
+        try:
+            suit_response = SuitabilityService.analyze(suit_request)
+        except Exception as exc:
+            suit_span.record_exception(exc)
+            logger.error(f"Pond suitability analysis failed: {exc}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Suitability analysis failed: {exc}",
+            )
+
+        if not suit_response.candidates:
+            logger.warning(f"No suitable pond candidate sites could be identified for '{filename}'")
+            raise HTTPException(
+                status_code=422,
+                detail="No suitable pond candidate sites could be identified in the uploaded terrain.",
+            )
+
+        top = suit_response.recommended or suit_response.candidates[0]
+        suit_span.set_attribute("suitability.num_candidates", len(suit_response.candidates))
+        suit_span.set_attribute("suitability.top_score", top.scores.composite_score)
+        suit_span.set_attribute("suitability.top_tier", top.suitability_tier)
+        suit_span.set_attribute("suitability.top_lat", top.lat)
+        suit_span.set_attribute("suitability.top_lng", top.lng)
+        suit_span.set_attribute("suitability.top_elevation_m", top.elevation_m)
+        logger.info(
+            f"Evaluated {len(suit_response.candidates)} pond candidate sites. "
+            f"Optimal Site: ({top.lat:.5f}, {top.lng:.5f}) Score={top.scores.composite_score:.2f} ({top.suitability_tier})"
         )
 
-    if not suit_response.candidates:
-        raise HTTPException(
-            status_code=422,
-            detail="No suitable pond candidate sites could be identified in the uploaded terrain.",
-        )
-
-    top = suit_response.recommended or suit_response.candidates[0]
+    # Record pond candidates metric
+    if "candidates_found" in metric_instruments:
+        metric_instruments["candidates_found"].add(len(suit_response.candidates), {"tier": top.suitability_tier})
 
     pond_site = PondSiteInfo(
         latitude=top.lat,
@@ -197,7 +262,7 @@ async def _handle_contour_analysis(file: UploadFile) -> ContourAnalysisResponse:
         reason=_build_reason(top),
     )
 
-    # ── 8. Watershed/Catchment — REUSE Phase 1 HydrologyService ──────────
+    # ── 8. Watershed/Catchment Delineation (OpenTelemetry Span) ────────────
     outlet_point = LatLng(lat=top.lat, lng=top.lng)
     watershed_request = WatershedRequest(
         outlet_point=outlet_point,
@@ -205,13 +270,30 @@ async def _handle_contour_analysis(file: UploadFile) -> ContourAnalysisResponse:
         bounds=bounds,
         pixel_size_m=pixel_size_m,
     )
-    try:
-        watershed_response = HydrologyService.delineate_watershed(watershed_request)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Catchment delineation failed: {exc}",
+
+    with tracer.start_as_current_span("delineate_catchment_watershed") as ws_span:
+        try:
+            watershed_response = HydrologyService.delineate_watershed(watershed_request)
+        except Exception as exc:
+            ws_span.record_exception(exc)
+            logger.error(f"Catchment delineation failed: {exc}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Catchment delineation failed: {exc}",
+            )
+
+        ws_span.set_attribute("catchment.area_m2", watershed_response.catchment_area_m2)
+        ws_span.set_attribute("catchment.area_km2", watershed_response.catchment_area_km2)
+        ws_span.set_attribute("catchment.perimeter_km", watershed_response.perimeter_km)
+        ws_span.set_attribute("catchment.avg_slope_deg", watershed_response.avg_slope_deg)
+        logger.info(
+            f"Delineated catchment watershed: {watershed_response.catchment_area_m2:,.1f} m² "
+            f"({watershed_response.catchment_area_km2:.3f} km²) contributing to pond site"
         )
+
+    # Record catchment area metric
+    if "catchment_area" in metric_instruments:
+        metric_instruments["catchment_area"].record(watershed_response.catchment_area_m2, {"status": "success"})
 
     catchment_info = CatchmentInfo(
         area_m2=watershed_response.catchment_area_m2,
@@ -224,23 +306,37 @@ async def _handle_contour_analysis(file: UploadFile) -> ContourAnalysisResponse:
         boundary=watershed_response.catchment_polygon,
     )
 
-    # ── 9. Generate Overlay Images for Leaflet Map ───────────────────────
+    # ── 9. Generate Overlay Images for Leaflet Map (OpenTelemetry Span) ──
     dem_id = f"kml_{uuid.uuid4().hex[:8]}"
     elev_overlay_filename = f"{dem_id}_elev.png"
     hillshade_filename = f"{dem_id}_hillshade.png"
     elev_overlay_path = os.path.join(settings.STORAGE_DIR, elev_overlay_filename)
     hillshade_path = os.path.join(settings.STORAGE_DIR, hillshade_filename)
 
-    try:
-        DemService._create_elevation_overlay(
-            dem_np, terrain_info.min_elevation_m, terrain_info.max_elevation_m, elev_overlay_path
-        )
-        DemService._create_hillshade_overlay(dem_np, pixel_size_m, hillshade_path)
-        elevation_overlay_url = f"/storage/{elev_overlay_filename}"
-        hillshade_overlay_url = f"/storage/{hillshade_filename}"
-    except Exception as img_exc:
-        elevation_overlay_url = None
-        hillshade_overlay_url = None
+    with tracer.start_as_current_span("generate_dem_overlays") as img_span:
+        img_span.set_attribute("overlay.dem_id", dem_id)
+        try:
+            DemService._create_elevation_overlay(
+                dem_np, terrain_info.min_elevation_m, terrain_info.max_elevation_m, elev_overlay_path
+            )
+            DemService._create_hillshade_overlay(dem_np, pixel_size_m, hillshade_path)
+            elevation_overlay_url = f"/storage/{elev_overlay_filename}"
+            hillshade_overlay_url = f"/storage/{hillshade_filename}"
+            img_span.set_attribute("overlay.success", True)
+        except Exception as img_exc:
+            img_span.record_exception(img_exc)
+            logger.warning(f"Overlay generation non-fatal error: {img_exc}")
+            elevation_overlay_url = None
+            hillshade_overlay_url = None
+
+    # Record total analysis latency metric
+    total_analysis_sec = time.time() - analysis_start_time
+    if "analysis_duration" in metric_instruments:
+        metric_instruments["analysis_duration"].record(total_analysis_sec, {"format": fmt, "status": "success"})
+
+    logger.info(
+        f"Village pond planning analysis completed successfully for '{filename}' in {total_analysis_sec:.2f}s."
+    )
 
     return ContourAnalysisResponse(
         success=True,
