@@ -266,12 +266,12 @@ def setup_telemetry(app: FastAPI, jaeger_host: str = "localhost", jaeger_port: i
     except Exception as err:
         logger.warning(f"Could not attach opentelemetry.log file handler: {err}")
 
-    # 5. Instrument FastAPI
+    # 5. Instrument FastAPI (excluding internal observability & proxy endpoints)
     FastAPIInstrumentor.instrument_app(
         app,
         tracer_provider=tracer_provider,
         meter_provider=meter_provider,
-        excluded_urls="telemetry,metrics,docs,openapi.json,favicon.ico"
+        excluded_urls="telemetry,metrics,jaeger,docs,openapi.json,favicon.ico"
     )
 
     # 6. Add HTTP Middleware for Trace-ID header propagation & active requests
@@ -279,10 +279,11 @@ def setup_telemetry(app: FastAPI, jaeger_host: str = "localhost", jaeger_port: i
         async def dispatch(self, request: Request, call_next):
             endpoint = request.url.path
             method = request.method
+            is_internal = endpoint.startswith(("/telemetry", "/metrics", "/jaeger"))
 
             # Increment active requests
             active_counter = metric_instruments.get("active_requests")
-            if active_counter and not endpoint.startswith(("/telemetry", "/metrics")):
+            if active_counter and not is_internal:
                 active_counter.add(1, {"endpoint": endpoint, "method": method})
 
             start_time = time.time()
@@ -297,11 +298,11 @@ def setup_telemetry(app: FastAPI, jaeger_host: str = "localhost", jaeger_port: i
                 raise exc
             finally:
                 duration = time.time() - start_time
-                if active_counter and not endpoint.startswith(("/telemetry", "/metrics")):
+                if active_counter and not is_internal:
                     active_counter.add(-1, {"endpoint": endpoint, "method": method})
 
             # Record custom metrics
-            if not endpoint.startswith(("/telemetry", "/metrics")):
+            if not is_internal:
                 req_counter = metric_instruments.get("requests_total")
                 if req_counter:
                     req_counter.add(1, {
