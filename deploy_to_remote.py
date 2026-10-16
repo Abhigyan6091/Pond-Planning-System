@@ -99,7 +99,7 @@ fi
     start_jaeger_cmd = f"""
 if ! pgrep -f "jaeger-all-in-one" > /dev/null; then
     echo "Starting Jaeger All-in-One..."
-    nohup {REMOTE_BASE}/telemetry_tools/jaeger-1.60.0-linux-amd64/jaeger-all-in-one > {REMOTE_BASE}/jaeger.log 2>&1 &
+    nohup {REMOTE_BASE}/telemetry_tools/jaeger-1.60.0-linux-amd64/jaeger-all-in-one --query.base-path=/jaeger > {REMOTE_BASE}/jaeger.log 2>&1 &
     sleep 2
     echo "Jaeger started."
 else

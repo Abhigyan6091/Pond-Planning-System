@@ -359,7 +359,7 @@ def _register_telemetry_routes(app: FastAPI):
             "service_name": "village-pond-planning-system",
             "service_version": "1.0.0",
             "environment": "production",
-            "jaeger_url": "http://localhost:16686",
+            "jaeger_url": "/jaeger/",
             "metrics_url": "/metrics",
             "total_captured_spans": len(spans_list),
             "total_captured_traces": len(unique_traces),
@@ -367,6 +367,62 @@ def _register_telemetry_routes(app: FastAPI):
             "average_span_latency_ms": avg_latency,
             "recorded_instruments": list(metric_instruments.keys())
         }
+
+    @app.api_route("/jaeger/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
+    @app.get("/jaeger", include_in_schema=False)
+    async def jaeger_proxy(request: Request, path: str = ""):
+        """
+        Transparent reverse proxy to Jaeger UI & Query API on 127.0.0.1:16686/jaeger/...
+        Enables access to full Jaeger UI remotely via port 5240 even when port 16686 is not forwarded.
+        """
+        if not path and not request.url.path.endswith("/"):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/jaeger/")
+
+        jaeger_target = f"http://127.0.0.1:16686/jaeger/{path}"
+        if request.url.query:
+            jaeger_target += f"?{request.url.query}"
+
+        body = await request.body()
+        req_headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length")}
+
+        try:
+            import requests
+            resp = requests.request(
+                method=request.method,
+                url=jaeger_target,
+                headers=req_headers,
+                data=body if body else None,
+                allow_redirects=False,
+                timeout=15
+            )
+
+            resp_headers = {
+                k: v for k, v in resp.headers.items()
+                if k.lower() not in ("content-encoding", "transfer-encoding", "content-length")
+            }
+
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                headers=resp_headers,
+                media_type=resp.headers.get("content-type")
+            )
+        except Exception as e:
+            logger.error(f"Error proxying request to Jaeger at {jaeger_target}: {e}")
+            return HTMLResponse(
+                f"""<!DOCTYPE html>
+<html>
+<head><title>Jaeger Unavailable</title><style>body{{font-family:sans-serif;background:#0f172a;color:#f8fafc;padding:2rem;}}</style></head>
+<body>
+  <h2>Jaeger Backend Unavailable</h2>
+  <p>Could not connect to Jaeger All-In-One at <code>http://127.0.0.1:16686</code>: {e}</p>
+  <p>Please ensure Jaeger is running with <code>--query.base-path=/jaeger</code></p>
+  <p><a href="/telemetry" style="color:#38bdf8;">Return to Telemetry Dashboard</a></p>
+</body>
+</html>""",
+                status_code=502
+            )
 
     @app.get("/api/telemetry/spans", summary="Query OpenTelemetry Spans", tags=["Observability"])
     def get_captured_spans(limit: int = 50, trace_id: Optional[str] = None):
@@ -698,7 +754,7 @@ def _render_dashboard_html() -> str:
         <span class="status-dot"></span>
         <span>OTel Active</span>
       </div>
-      <a href="http://localhost:16686" target="_blank" class="btn btn-primary" title="Open Jaeger Tracing UI">
+      <a href="/jaeger/" target="_blank" class="btn btn-primary" title="Open Jaeger Tracing UI">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
         Open Jaeger UI
       </a>
@@ -731,9 +787,9 @@ def _render_dashboard_html() -> str:
         <div class="stat-meta">Microsecond-level precision</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">OTLP Exporter</div>
-        <div class="stat-value" style="font-size: 1.25rem; color: var(--success);">READY</div>
-        <div class="stat-meta">http://localhost:4318 (Jaeger)</div>
+        <div class="stat-label">OTLP & Jaeger UI</div>
+        <div class="stat-value" style="font-size: 1.25rem; color: var(--success);">ACTIVE</div>
+        <div class="stat-meta"><a href="/jaeger/" target="_blank" style="color:var(--primary); text-decoration:none;">Open /jaeger/ &rarr;</a></div>
       </div>
     </div>
 
@@ -915,7 +971,7 @@ def _render_dashboard_html() -> str:
           <div style="background: rgba(255,255,255,0.02); padding: 1.25rem; border-radius: 10px; border: 1px solid var(--card-border);">
             <h3 style="color: var(--warning); margin-bottom: 0.5rem;">4. Visualization & Inspection</h3>
             <ul style="color: var(--text-muted); font-size: 0.85rem; padding-left: 1.25rem; line-height: 1.6;">
-              <li><strong>Jaeger UI (Port 16686):</strong> Interactive timeline waterfalls, span drill-down, and dependency graphs.</li>
+              <li><strong>Jaeger UI (/jaeger/ & Port 16686):</strong> Interactive timeline waterfalls, span drill-down, and dependency graphs proxied directly via FastAPI.</li>
               <li><strong>Observability Hub (Port 5240):</strong> Native in-app real-time dashboard for comprehensive VIVA and submission review.</li>
             </ul>
           </div>
@@ -964,7 +1020,7 @@ def _render_dashboard_html() -> str:
       }
       tbody.innerHTML = spans.map(s => {
         const isOk = s.status === 'OK' || s.status === 'UNSET';
-        const jaegerLink = 'http://localhost:16686/trace/' + s.trace_id;
+        const jaegerLink = '/jaeger/trace/' + s.trace_id;
         return `<tr>
           <td style="font-weight:600; color:var(--text-main);">${escapeHtml(s.name)}</td>
           <td><span class="badge ${s.kind === 'SERVER' ? 'badge-post' : 'badge-get'}">${s.kind}</span></td>

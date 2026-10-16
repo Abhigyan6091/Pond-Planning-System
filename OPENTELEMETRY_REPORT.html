@@ -345,9 +345,10 @@ start.bat
 3. <strong>React Frontend:</strong> <code>http://localhost:3000</code></p>
 <h3>7.2 Verification Endpoints</h3>
 <ul>
-<li><strong>Observability Dashboard:</strong> Navigate to <a href="http://localhost:5240/telemetry"><code>http://localhost:5240/telemetry</code></a> to see live spans, traces, and correlated logs.</li>
-<li><strong>Jaeger UI:</strong> Navigate to <a href="http://localhost:16686"><code>http://localhost:16686</code></a> and select service <code>village-pond-planning-system</code>.</li>
-<li><strong>Prometheus Metrics:</strong> Navigate to <a href="http://localhost:5240/metrics"><code>http://localhost:5240/metrics</code></a>.</li>
+<li><strong>Observability Dashboard:</strong> Navigate to <a href="http://localhost:5240/telemetry"><code>/telemetry</code></a> (or deployed at <code>http://10.1.75.79:5240/telemetry</code>).</li>
+<li><strong>Jaeger UI (Reverse-Proxied):</strong> Directly available at <a href="http://localhost:5240/jaeger/"><code>/jaeger/</code></a> (or deployed at <code>http://10.1.75.79:5240/jaeger/</code>). This transparent FastAPI proxy routes all trace queries to internal Jaeger query backend without requiring external port forwarding for port 16686.</li>
+<li><strong>Standalone Jaeger UI:</strong> <code>http://localhost:16686/jaeger/</code> (when running locally or via SSH port forward).</li>
+<li><strong>Prometheus Metrics:</strong> Navigate to <a href="http://localhost:5240/metrics"><code>/metrics</code></a> (or <code>http://10.1.75.79:5240/metrics</code>).</li>
 </ul>
 <h3>7.3 Executing Sample Analysis Requests</h3>
 <p>To generate fresh traces, execute the included test contour files:</p>

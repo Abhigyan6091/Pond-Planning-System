@@ -12,15 +12,15 @@ export PATH=/home/student/.local/bin:$PATH
 echo "[$(date)] Starting Contour + OpenTelemetry 24/7 Supervisor..." >> /home/student/Contour/supervisor.log
 
 if ! pgrep -f "jaeger-all-in-one" > /dev/null; then
-    echo "[$(date)] Starting Jaeger All-In-One..." >> /home/student/Contour/supervisor.log
-    nohup /home/student/Contour/telemetry_tools/jaeger-1.60.0-linux-amd64/jaeger-all-in-one > /home/student/Contour/jaeger.log 2>&1 < /dev/null &
+    echo "[$(date)] Starting Jaeger All-In-One with --query.base-path=/jaeger..." >> /home/student/Contour/supervisor.log
+    nohup /home/student/Contour/telemetry_tools/jaeger-1.60.0-linux-amd64/jaeger-all-in-one --query.base-path=/jaeger > /home/student/Contour/jaeger.log 2>&1 < /dev/null &
     sleep 2
 fi
 
 while true; do
     if ! pgrep -f "jaeger-all-in-one" > /dev/null; then
-        echo "[$(date)] Respawning Jaeger..." >> /home/student/Contour/supervisor.log
-        nohup /home/student/Contour/telemetry_tools/jaeger-1.60.0-linux-amd64/jaeger-all-in-one > /home/student/Contour/jaeger.log 2>&1 < /dev/null &
+        echo "[$(date)] Respawning Jaeger with --query.base-path=/jaeger..." >> /home/student/Contour/supervisor.log
+        nohup /home/student/Contour/telemetry_tools/jaeger-1.60.0-linux-amd64/jaeger-all-in-one --query.base-path=/jaeger > /home/student/Contour/jaeger.log 2>&1 < /dev/null &
         sleep 1
     fi
     echo "[$(date)] Launching Uvicorn on 0.0.0.0:5000..." >> /home/student/Contour/supervisor.log
