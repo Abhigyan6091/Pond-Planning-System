@@ -380,8 +380,28 @@ def _register_telemetry_routes(app: FastAPI):
             return RedirectResponse(url="/jaeger/")
 
         jaeger_target = f"http://127.0.0.1:16686/jaeger/{path}"
-        if request.url.query:
-            jaeger_target += f"?{request.url.query}"
+        query_str = request.url.query
+
+        # Compensate for client-to-server clock/timezone skew (e.g. browser in IST vs container in UTC epoch)
+        if path == "api/traces" and query_str and ("start=" in query_str or "end=" in query_str):
+            try:
+                from urllib.parse import parse_qs, urlencode
+                params = parse_qs(query_str)
+                server_now_us = int(time.time() * 1e6)
+                client_end_us = int(params["end"][0]) if "end" in params else server_now_us
+                client_start_us = int(params["start"][0]) if "start" in params else (client_end_us - 300 * 1000000)
+
+                # If client clock differs from server clock by more than 5 minutes (e.g. 5.5 hour IST/UTC skew)
+                if abs(server_now_us - client_end_us) > 300 * 1000000:
+                    duration_us = max(client_end_us - client_start_us, 60 * 1000000)
+                    params["end"] = [str(server_now_us + 60 * 1000000)] # 1-min future buffer
+                    params["start"] = [str(server_now_us - duration_us)]
+                    query_str = urlencode(params, doseq=True)
+            except Exception as ex:
+                logger.debug(f"Time normalization ignored: {ex}")
+
+        if query_str:
+            jaeger_target += f"?{query_str}"
 
         body = await request.body()
         req_headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length")}
