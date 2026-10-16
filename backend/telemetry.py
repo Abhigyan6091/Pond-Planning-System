@@ -342,7 +342,29 @@ def _register_telemetry_routes(app: FastAPI):
     def prometheus_metrics():
         """Expose current OpenTelemetry & runtime metrics in Prometheus exposition format."""
         data = prometheus_client.generate_latest()
-        return Response(content=data, media_type="text/plain; version=0.0.4; charset=utf-8")
+        return Response(
+            content=data,
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Cache-Control": "no-cache, no-store, must-revalidate"
+            }
+        )
+
+    @app.get("/api/telemetry/metrics-preview", summary="Filtered Village Pond Metrics", tags=["Observability"])
+    def telemetry_metrics_preview():
+        """Return formatted plaintext preview of custom Village Pond application metrics."""
+        try:
+            data = prometheus_client.generate_latest().decode("utf-8", errors="replace")
+            lines = [l for l in data.splitlines() if "village_pond_" in l]
+            text = "\n".join(lines) if lines else data[:3000]
+            return PlainTextResponse(
+                text,
+                headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"}
+            )
+        except Exception as e:
+            return PlainTextResponse(f"# Error generating metrics preview: {e}", status_code=500)
 
     @app.get("/api/telemetry/overview", summary="OpenTelemetry Overview Stats", tags=["Observability"])
     def telemetry_overview():
@@ -950,7 +972,10 @@ def _render_dashboard_html() -> str:
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Live Prometheus Scrape Preview</h2>
-            <a href="/metrics" target="_blank" class="btn btn-secondary" style="font-size:0.75rem;">Raw /metrics</a>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button onclick="fetchMetricsPreview()" class="btn btn-secondary" style="font-size:0.75rem;">&#x21bb; Refresh</button>
+              <a href="/metrics" target="_blank" class="btn btn-secondary" style="font-size:0.75rem;">Raw /metrics &rarr;</a>
+            </div>
           </div>
           <div class="code-box" id="metrics-preview">Fetching Prometheus metrics...</div>
         </div>
@@ -1063,7 +1088,7 @@ def _render_dashboard_html() -> str:
       tbody.innerHTML = logs.map(l => {
         const isErr = l.level === 'ERROR';
         const isWarn = l.level === 'WARNING';
-        const jaegerLink = l.trace_id ? 'http://localhost:16686/trace/' + l.trace_id : '#';
+        const jaegerLink = l.trace_id ? '/jaeger/trace/' + l.trace_id : '#';
         return `<tr>
           <td style="color:var(--text-muted); font-size:0.8rem;">${l.timestamp}</td>
           <td><span class="badge ${isErr ? 'badge-err' : isWarn ? 'badge-get' : 'badge-ok'}">${l.level}</span></td>
@@ -1075,14 +1100,32 @@ def _render_dashboard_html() -> str:
       }).join('');
     }
 
-    async function fetchMetricsPreview() {
+    async function fetchMetricsPreview(retryCount = 0) {
+      const box = document.getElementById('metrics-preview');
+      if (!box) return;
+      box.textContent = 'Loading live Prometheus metrics...';
       try {
-        const res = await fetch('/metrics');
-        const text = await res.text();
-        const filtered = text.split('\\n').filter(line => line.includes('village_pond_') || line.startsWith('# HELP village_pond_') || line.startsWith('# TYPE village_pond_')).join('\\n');
-        document.getElementById('metrics-preview').textContent = filtered || text.slice(0, 2000);
+        let text = '';
+        try {
+          const resPreview = await fetch('/api/telemetry/metrics-preview');
+          if (resPreview.ok) text = await resPreview.text();
+        } catch (_) {}
+
+        if (!text) {
+          const res = await fetch('/metrics');
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const raw = await res.text();
+          const filtered = raw.split('\\n').filter(line => line.includes('village_pond_') || line.startsWith('# HELP village_pond_') || line.startsWith('# TYPE village_pond_')).join('\\n');
+          text = filtered || raw.slice(0, 3000);
+        }
+
+        box.textContent = text;
       } catch (err) {
-        document.getElementById('metrics-preview').textContent = 'Error fetching /metrics: ' + err;
+        if (retryCount < 2) {
+          setTimeout(() => fetchMetricsPreview(retryCount + 1), 1000);
+        } else {
+          box.innerHTML = '<span style="color:#f87171;">Failed to fetch /metrics: ' + escapeHtml(err.message || String(err)) + '</span><br><br><button onclick="fetchMetricsPreview()" class="btn btn-secondary" style="font-size:0.75rem; padding:0.4rem 0.8rem;">&#x21bb; Retry</button>';
+        }
       }
     }
 
